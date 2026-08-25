@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>SmartEvac — FECART</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anta&family=Bowlby+One+SC&family=Luckiest+Guy&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+
+</head>
+<body>
+<div class="app">
+<!--barra do topo-->
+  <header>
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-text">
+        <div class="name">SMARTEVAC</div>
+        <div class="sub">Bairro da Liberdade · A* pathfinding</div>
+      </div>
+    </div>
+    <div class="botao">
+      <button class="nav-btn active" data-view="view-simulacao">Simulação</button>
+      <button class="nav-btn" data-view="view-algoritmo">Sobre o algoritmo</button>
+      <button class="nav-btn" data-view="view-mapa">Mapa e dados</button>
+    </div>
+     <div class="status" id="status-bar"><span class="dot" id="status-dot"></span> <span id="status-text">Simulação parada</span></div>
+  </div>
+  </header>
+  <section id="view-simulacao" class="view active">
+  <div class="main-grid">
+
+    <!-- Lcontroles da direita -->
+    <div class="panel">
+      <div class="panel-title">Controle</div>
+       <button class="btn primary" id="btn-iniciar">▶ Iniciar simulação</button>
+       <button class="btn ghost" id="btn-pausar">⏸ Pausar</button>
+       <button class="btn ghost" id="btn-reiniciar">↺ Reiniciar mapa</button>
+
+      <div class="panel-title spaced">Cenário</div>
+      <div class="field"><span>Nº de agentes</span><span class="val" id="field-agentes">50</span></div>
+      <div class="field"><span>Origem</span><span class="val">aleatória</span></div>
+
+      <div class="slider-row">
+        <div class="slider-label"><span>Velocidade</span><span id="speed-label">1.5×</span></div>
+        <div class="slider-track" id="speed-track"><div class="slider-fill" id="speed-fill"></div><div class="slider-thumb" id="speed-thumb"></div></div>
+      </div>
+
+      <div class="panel-title spaced">Ferramentas</div>
+      <div class="tool-btn" data-tool="bloqueio"><span class="ic danger">🔥</span> Adicionar bloqueio</div>
+      <div class="tool-btn" data-tool="saida"><span class="ic safe">🚪</span> Marcar saída segura</div>
+      <div class="tool-btn" data-tool="pessoa"><span class="ic amber">🧍</span> Adicionar pessoa</div>
+    </div>
+
+    <!-- CENTER: MAP -->
+    <div class="panel map-panel">
+      <div class="map-toolbar" id="map-toolbar">
+        <div class="chip active" data-tab="tab-mapa">Mapa</div>
+        <div class="chip" data-tab="tab-custo">Custo do A*</div>
+        <div class="chip" data-tab="tab-nos">Nós explorados</div>
+        <div class="chip" data-tab="tab-comparar">Comparar c/ Dijkstra</div>
+      </div>
+
+      <div class="map-canvas" id="map-canvas">
+        <div class="grid-lines"></div>
+
+        <svg class="path-svg" id="path-svg"></svg>
+
+        <div id="nodes-container"></div>
+        <div id="agents-container"></div>
+        <div id="tags-container"></div>
+
+        <div id="overlay-container" class="overlay-container"></div>
+      </div>
+
+      <div class="map-legend" id="map-legend">
+        <div class="legend-item"><span class="legend-swatch" style="background:var(--surface-raised);border:2px solid var(--text-muted);"></span> Cruzamento</div>
+        <div class="legend-item"><span class="legend-swatch" style="background:var(--safe);"></span> Saída segura</div>
+        <div class="legend-item"><span class="legend-swatch" style="background:var(--danger);"></span> Bloqueio / risco</div>
+        <div class="legend-item"><span class="legend-swatch" style="background:var(--amber);border-radius:50% 50% 50% 4px;"></span> Agente</div>
+        <div class="legend-item"><span class="legend-swatch" style="background:transparent;border-top:2.5px dashed var(--safe);width:14px;height:0;border-radius:0;"></span> Rota (A*)</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: STATS -->
+    <div class="panel">
+      <div class="panel-title">Estatísticas</div>
+      <div class="stat-card"><span class="lbl">Evacuados</span><span class="num safe"><span id="stat-evacuados">0</span><span style="color:var(--text-muted); font-size:13px;">/<span id="stat-total">50</span></span></span></div>
+      <div class="stat-card"><span class="lbl">Tempo decorrido</span><span class="num" id="stat-tempo">00:00</span></div>
+      <div class="stat-card"><span class="lbl">Nós explorados</span><span class="num amber" id="stat-nos">—</span></div>
+      <div class="stat-card"><span class="lbl">Custo médio</span><span class="num" id="stat-custo">—</span></div>
+
+      <div class="panel-title spaced">Evacuados / tempo</div>
+      <div class="chart-wrap">
+        <div class="chart-line">
+          <div class="chart-y-axis">
+            <span>100%</span>
+            <span>75%</span>
+            <span>50%</span>
+            <span>25%</span>
+            <span>0%</span>
+          </div>
+          <svg class="line-chart" id="evac-chart" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <line class="grid-line" x1="0" y1="0" x2="100" y2="0"></line>
+            <line class="grid-line" x1="0" y1="25" x2="100" y2="25"></line>
+            <line class="grid-line" x1="0" y1="50" x2="100" y2="50"></line>
+            <line class="grid-line" x1="0" y1="75" x2="100" y2="75"></line>
+            <line class="grid-line" x1="0" y1="100" x2="100" y2="100"></line>
+            <polygon class="chart-area" id="evac-area" points=""></polygon>
+            <polyline class="chart-line-path" id="evac-line" points=""></polyline>
+          </svg>
+        </div>
+        <div class="chart-x-axis">
+          <span id="chart-x-start">0s</span>
+          <span id="chart-x-mid">—</span>
+          <span id="chart-x-end">agora</span>
+        </div>
+      </div>
+
+      <div class="panel-title">Log de eventos</div>
+      <div class="log" id="log-list">
+       <div>&gt; Simulação iniciada — 50 agentes</div>
+       <div> &gt; <span class="warn">Bloqueio em R. Galvão Bueno</span></div>
+        <div>&gt; Agente #12 recalculou rota</div>
+        <div>&gt; <span class="hl">Agente #03 chegou à saída</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footnote">SmartEvac — protótipo acadêmico de simulação de evacuação com A* · Bairro da Liberdade, São Paulo <br>
+   O projeto contém fins puramente acadêmicos.
+  </div>
+  </section>
+
+  <!-- SOBRE O ALGORITMO -->
+  <section id="view-algoritmo" class="view">
+    <div class="algo-grid">
+
+      <div class="panel algo-intro">
+        <div class="panel-title">Sobre o algoritmo</div>
+        <h2 class="algo-heading">Busca A* para rotas de evacuação</h2>
+        <p class="algo-text">
+          O A* (lê-se "A estrela") é um algoritmo de busca em grafos usado para encontrar o caminho de menor
+          custo entre dois pontos. No SmartEvac, cada cruzamento do bairro vira um nó e cada rua uma aresta,
+          e cada agente calcula em tempo real a rota mais curta até a saída segura mais próxima.
+        </p>
+        <p class="algo-text">
+          A diferença do A* para uma busca cega é a <strong>heurística</strong>: além do custo já percorrido,
+          ele estima o custo restante até o destino, o que evita explorar caminhos que claramente não valem
+          a pena. É por isso que ele costuma expandir muito menos nós do que o Dijkstra para chegar ao mesmo
+          resultado ótimo.
+        </p>
+
+        <div class="formula-card mono">
+          <span class="formula-part">f(n)</span>
+          <span class="formula-op">=</span>
+          <span class="formula-part">g(n)</span>
+          <span class="formula-op">+</span>
+          <span class="formula-part">h(n)</span>
+        </div>
+        <div class="formula-legend">
+          <div><span class="fkey"><strong>g(n)</strong></span> custo real do trajeto já percorrido até o nó <em>n</em></div>
+          <div><span class="fkey"><strong>h(n)</strong></span> estimativa (heurística) do custo restante até a saída</div>
+          <div><span class="fkey"><strong>f(n)</strong></span> prioridade do nó na fila de exploração — quanto menor, antes ele é visitado</div>
+        </div>
+      </div>
+
+      <div class="panel algo-steps">
+        <div class="panel-title">Passo a passo</div>
+        <div class="step"><span class="step-n">01</span> Coloca o nó de origem numa fila de prioridade com f(n) = h(n)</div>
+        <div class="step"><span class="step-n">02</span> Remove da fila o nó de menor f(n) e o marca como visitado</div>
+        <div class="step"><span class="step-n">03</span> Para cada vizinho não bloqueado, calcula um novo g(n) via este nó</div>
+        <div class="step"><span class="step-n">04</span> Se o novo caminho for mais barato, atualiza o vizinho e recalcula f(n)</div>
+        <div class="step"><span class="step-n">05</span> Repete até alcançar uma saída segura ou esvaziar a fila</div>
+        <div class="step"><span class="step-n">06</span> Se uma rua bloquear no meio do caminho, o agente refaz a busca a partir da posição atual</div>
+
+        <div class="panel-title spaced">A* vs. Dijkstra</div>
+        <div class="field"><span>Usa heurística</span><span class="val">A*: sim · Dijkstra: não</span></div>
+        <div class="field"><span>Nós explorados</span><span class="val">A*: menos · Dijkstra: mais</span></div>
+        <div class="field"><span>Garantia de ótimo</span><span class="val">ambos, se h(n) for admissível</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- MAPA E DADOS -->
+  <section id="view-mapa" class="view">
+    <div class="mapa-grid">
+
+      <div class="panel">
+        <div class="panel-title">Área simulada</div>
+        <h2 class="algo-heading">Bairro da Liberdade, São Paulo</h2>
+        <p class="algo-text">
+          O grafo usado na simulação é uma versão simplificada do bairro, com cruzamentos como nós e
+          trechos de rua como arestas ponderadas pela distância aproximada entre eles. Bloqueios (incêndio,
+          escombros, alagamento etc.) removem uma aresta do grafo em tempo real, forçando os agentes a
+          recalcular a rota.
+        </p>
+        <div class="field"><span>Nós (cruzamentos)</span><span class="val">86</span></div>
+        <div class="field"><span>Arestas (trechos de rua)</span><span class="val">142</span></div>
+        <div class="field"><span>Saídas seguras cadastradas</span><span class="val">6</span></div>
+        <div class="field"><span>Fonte da malha viária</span><span class="val">OpenStreetMap (extrato local)</span></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Legenda do mapa</div>
+        <div class="map-legend mapa-legend-block">
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--surface-raised);border:2px solid var(--text-muted);"></span> Cruzamento</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--safe);"></span> Saída segura</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--danger);"></span> Bloqueio / risco</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--amber);border-radius:50% 50% 50% 4px;"></span> Agente</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:transparent;border-top:2.5px dashed var(--safe);width:14px;height:0;border-radius:0;"></span> Rota (A*)</div>
+        </div>
+        <div class="panel-title spaced">Formato dos dados</div>
+        <p class="algo-text">
+          Cada nó guarda coordenadas (x, y) e um estado — livre, saída ou bloqueado. Cada aresta guarda os
+          dois nós que conecta e um peso de custo. Esse formato é o que alimenta tanto o A* quanto o Dijkstra
+          usados na aba de simulação.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+</div>
+
+<script src="main.js"></script>
+</body>
+</html>
