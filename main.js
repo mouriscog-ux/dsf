@@ -1,13 +1,76 @@
 // ============================================================
-// SmartEvac — Engine de Simulação & Algoritmos de Busca (A* e Dijkstra)
-// Bairro da Liberdade, São Paulo · FECART
+// URBANISA TECH — SmartEvac Liberdade
+// Engine de Simulação & Algoritmos de Busca (A* e Dijkstra)
+// Feira de Ciências 2026 · São Paulo
 // ============================================================
 
 (function () {
   'use strict';
 
-  /* ---------- 1. NAVEGAÇÃO ENTRE ABAS PRINCIPAIS ---------- */
-  var navButtons = document.querySelectorAll('.nav-btn');
+  /* ---------- 1. MODAL URBANISA TECH & TUTORIAL DA FEIRA ---------- */
+  var urbanisaModal   = document.getElementById('urbanisa-modal');
+  var tutorialModal   = document.getElementById('tutorial-modal');
+  var btnStartHero    = document.getElementById('btn-start-hero');
+  var btnTutorialHero = document.getElementById('btn-tutorial-hero');
+  var btnOpenTutorial = document.getElementById('btn-open-tutorial');
+  var btnCloseTutorial= document.getElementById('btn-close-tutorial');
+  var btnPrevSlide    = document.getElementById('btn-prev-slide');
+  var btnNextSlide    = document.getElementById('btn-next-slide');
+
+  var currentSlideIndex = 1;
+  var totalSlides = 4;
+
+  function updateTutorialSlide(index) {
+    currentSlideIndex = Math.min(totalSlides, Math.max(1, index));
+    var slides = tutorialModal.querySelectorAll('.tutorial-slide');
+    var dots   = tutorialModal.querySelectorAll('.slide-dots .dot');
+
+    slides.forEach(function (s) { s.classList.remove('active'); });
+    dots.forEach(function (d) { d.classList.remove('active'); });
+
+    var targetSlide = tutorialModal.querySelector('.tutorial-slide[data-slide="' + currentSlideIndex + '"]');
+    if (targetSlide) targetSlide.classList.add('active');
+    if (dots[currentSlideIndex - 1]) dots[currentSlideIndex - 1].classList.add('active');
+
+    btnPrevSlide.disabled = currentSlideIndex === 1;
+    btnNextSlide.textContent = currentSlideIndex === totalSlides ? 'Concluir 🚀' : 'Próximo ▶';
+  }
+
+  btnStartHero.addEventListener('click', function () {
+    urbanisaModal.style.display = 'none';
+    addLog('URBANISA TECH — Simulação iniciada pela tela de apresentação');
+  });
+
+  btnTutorialHero.addEventListener('click', function () {
+    urbanisaModal.style.display = 'none';
+    tutorialModal.style.display = 'flex';
+    updateTutorialSlide(1);
+  });
+
+  btnOpenTutorial.addEventListener('click', function () {
+    tutorialModal.style.display = 'flex';
+    updateTutorialSlide(1);
+  });
+
+  btnCloseTutorial.addEventListener('click', function () {
+    tutorialModal.style.display = 'none';
+  });
+
+  btnPrevSlide.addEventListener('click', function () {
+    updateTutorialSlide(currentSlideIndex - 1);
+  });
+
+  btnNextSlide.addEventListener('click', function () {
+    if (currentSlideIndex === totalSlides) {
+      tutorialModal.style.display = 'none';
+      addLog('Tutorial da Feira concluído');
+    } else {
+      updateTutorialSlide(currentSlideIndex + 1);
+    }
+  });
+
+  /* ---------- 2. NAVEGAÇÃO ENTRE ABAS PRINCIPAIS ---------- */
+  var navButtons = document.querySelectorAll('.nav-btn:not(.tutorial-trigger)');
   var views = document.querySelectorAll('.view');
 
   navButtons.forEach(function (btn) {
@@ -20,7 +83,7 @@
     });
   });
 
-  /* ---------- 2. ELEMENTOS DA INTERFACE ---------- */
+  /* ---------- 3. ELEMENTOS DO SIMULADOR ---------- */
   var btnIniciar   = document.getElementById('btn-iniciar');
   var btnPausar    = document.getElementById('btn-pausar');
   var btnReiniciar = document.getElementById('btn-reiniciar');
@@ -42,7 +105,6 @@
   var agentsContainer  = document.getElementById('agents-container');
   var tagsContainer    = document.getElementById('tags-container');
   var overlayContainer = document.getElementById('overlay-container');
-  var mapLegend        = document.getElementById('map-legend');
   var mapToolbar       = document.getElementById('map-toolbar');
 
   var evacLine    = document.getElementById('evac-line');
@@ -54,10 +116,10 @@
   var toolButtons = document.querySelectorAll('.tool-btn');
 
   var DEFAULT_LOG = [
-    'Simulação iniciada — 50 agentes',
+    'URBANISA TECH iniciada — 50 agentes',
     '<span class="warn">Bloqueio em R. Galvão Bueno (Viaduto Osaka)</span>',
     'Agentes calculando rota via A*',
-    '<span class="hl">Agente #03 chegou à saída Metrô Liberdade</span>'
+    '<span class="hl">Agente evacuou via Metrô Liberdade</span>'
   ];
   var MAX_LOG_LINES = 6;
 
@@ -79,18 +141,18 @@
     });
   }
 
-  /* ---------- 3. BANCO DE DADOS DO GRAFO (Bairro da Liberdade) ---------- */
+  /* ---------- 4. GRAFO REALISTA DO BAIRRO DA LIBERDADE ---------- */
   var INITIAL_NODES = [
     { id: 'N1', name: 'R. Galvão Bueno (Norte)', x: 60, y: 90, type: 'normal' },
     { id: 'N2', name: 'Cruzamento Galvão x Estudantes', x: 210, y: 95, type: 'normal' },
-    { id: 'N3', name: 'Saída Metrô Liberdade', x: 340, y: 70, type: 'exit' },
-    { id: 'N4', name: 'Viaduto Cidade de Osaka', x: 140, y: 60, type: 'blocked' },
+    { id: 'N3', name: 'Estação Metrô Liberdade 🚇', x: 340, y: 70, type: 'exit' },
+    { id: 'N4', name: 'Viaduto Cidade de Osaka 🌉', x: 140, y: 60, type: 'blocked' },
     { id: 'N5', name: 'R. dos Estudantes (Oeste)', x: 90, y: 260, type: 'normal' },
     { id: 'N6', name: 'Cruzamento Estudantes x Américo', x: 200, y: 200, type: 'normal' },
-    { id: 'N7', name: 'Saída Praça da Liberdade', x: 300, y: 180, type: 'exit' },
+    { id: 'N7', name: 'Praça da Liberdade 🏙️', x: 300, y: 180, type: 'exit' },
     { id: 'N8', name: 'Rua da Glória (Sul)', x: 160, y: 230, type: 'normal' },
     { id: 'N9', name: 'Rua Américo de Campos', x: 270, y: 270, type: 'normal' },
-    { id: 'N10', name: 'Saída Av. Liberdade', x: 420, y: 130, type: 'exit' },
+    { id: 'N10', name: 'Avenida Liberdade 🚦', x: 420, y: 130, type: 'exit' },
     { id: 'N11', name: 'Rua Conselheiro Furtado', x: 380, y: 230, type: 'normal' },
     { id: 'N12', name: 'Rua São Joaquim', x: 110, y: 340, type: 'normal' }
   ];
@@ -113,6 +175,13 @@
     { from: 'N8', to: 'N12', weight: 120, name: 'R. São Joaquim' }
   ];
 
+  var LANDMARKS = [
+    { text: '🏮 Portal Liberdade', x: 60, y: 90 },
+    { text: '🚇 Metrô Liberdade', x: 340, y: 70 },
+    { text: '🏙️ Praça da Liberdade', x: 300, y: 180 },
+    { text: '🌉 Viaduto Osaka', x: 140, y: 60 }
+  ];
+
   var nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
   var edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
 
@@ -128,10 +197,10 @@
     edges.forEach(function (e) {
       if (e.from === nodeId) {
         var target = getNode(e.to);
-        if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight, edge: e });
+        if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
       } else if (e.to === nodeId) {
         var target = getNode(e.from);
-        if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight, edge: e });
+        if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
       }
     });
     return list;
@@ -143,12 +212,11 @@
     return Math.sqrt(dx * dx + dy * dy);
   }
 
-  /* ---------- 4. ALGORITMOS DE BUSCA (A* e Dijkstra) ---------- */
+  /* ---------- 5. MOTOR DE BUSCA (A* e Dijkstra) ---------- */
   function findPath(startId, useHeuristic) {
     var startNode = getNode(startId);
     if (!startNode || startNode.type === 'blocked') return null;
 
-    // Encontra saídas ativas
     var exitNodes = nodes.filter(function (n) { return n.type === 'exit'; });
     if (exitNodes.length === 0) return null;
 
@@ -177,10 +245,7 @@
     gScore[startId] = 0;
     fScore[startId] = heuristic(startNode);
 
-    var destinationExit = null;
-
     while (openSet.length > 0) {
-      // Pega nó com menor fScore
       var currentId = openSet[0];
       var lowestF = fScore[currentId];
       var currentIndex = 0;
@@ -200,8 +265,6 @@
 
       var currNode = getNode(currentId);
       if (currNode && currNode.type === 'exit') {
-        destinationExit = currNode;
-        // Reconstrói caminho
         var path = [currentId];
         var temp = currentId;
         while (cameFrom[temp]) {
@@ -215,7 +278,7 @@
           explorationOrder: explorationOrder,
           closedSet: closedSet,
           openSet: openSet,
-          destinationExit: destinationExit,
+          destinationExit: currNode,
           gScore: gScore,
           fScore: fScore
         };
@@ -241,7 +304,7 @@
     return null;
   }
 
-  /* ---------- 5. ESTADO DA SIMULAÇÃO E AGENTES ---------- */
+  /* ---------- 6. ESTADO E AGENTES ---------- */
   var STATE = { STOPPED: 'stopped', RUNNING: 'running', PAUSED: 'paused' };
   var state = STATE.STOPPED;
 
@@ -267,7 +330,7 @@
       currentNodeId: startNodeId,
       path: res ? res.path : [startNodeId],
       pathIndex: 0,
-      segmentProgress: 0, // 0 a 1 no segmento atual
+      segmentProgress: 0,
       x: getNode(startNodeId) ? getNode(startNodeId).x : 60,
       y: getNode(startNodeId) ? getNode(startNodeId).y : 90,
       evacuated: false
@@ -305,27 +368,33 @@
     }
   }
 
-  /* ---------- 6. RENDERIZAÇÃO DO GRAFO E TABS ---------- */
+  /* ---------- 7. DESENHO DO MAPA REALISTA E OVERLAYS ---------- */
   function renderGraph() {
-    // 1. Desenha arestas SVG
     var svgContent = '';
+
+    // Desenha quarteirões urbanos (polígonos de prédios da Liberdade)
+    svgContent += '<polygon points="70,100 190,105 150,220 70,220" fill="rgba(30, 41, 59, 0.45)" stroke="rgba(51, 65, 85, 0.6)" stroke-width="1.5"/>';
+    svgContent += '<polygon points="220,105 320,80 280,170 210,190" fill="rgba(30, 41, 59, 0.45)" stroke="rgba(51, 65, 85, 0.6)" stroke-width="1.5"/>';
+    svgContent += '<polygon points="100,270 190,210 260,270 120,330" fill="rgba(30, 41, 59, 0.45)" stroke="rgba(51, 65, 85, 0.6)" stroke-width="1.5"/>';
+
+    // Desenha trechos de ruas (arestas)
     edges.forEach(function (e) {
       var n1 = getNode(e.from);
       var n2 = getNode(e.to);
       if (!n1 || !n2) return;
       var isBlockedEdge = n1.type === 'blocked' || n2.type === 'blocked';
-      var strokeColor = isBlockedEdge ? 'var(--danger)' : '#2d374d';
+      var strokeColor = isBlockedEdge ? 'var(--danger)' : '#334155';
       var dashArray = isBlockedEdge ? '4 4' : 'none';
 
       svgContent += '<line x1="' + n1.x + '" y1="' + n1.y + '" x2="' + n2.x + '" y2="' + n2.y + '" ' +
-        'stroke="' + strokeColor + '" stroke-width="3" stroke-dasharray="' + dashArray + '" opacity="0.8"/>';
+        'stroke="' + strokeColor + '" stroke-width="4" stroke-linecap="round" stroke-dasharray="' + dashArray + '" opacity="0.9"/>';
     });
 
-    // Se estiver na aba mapa, desenha rotas do A* dos agentes
+    // Se estiver na aba mapa, desenha rotas do A* dos agentes em verde emerald
     if (activeTab === 'tab-mapa') {
       var samplePaths = [];
       agents.forEach(function (ag) {
-        if (!ag.evacuated && ag.path && ag.path.length > 1 && samplePaths.length < 3) {
+        if (!ag.evacuated && ag.path && ag.path.length > 1 && samplePaths.length < 4) {
           samplePaths.push(ag.path);
         }
       });
@@ -335,13 +404,13 @@
           var n = getNode(pth[i]);
           if (n) dStr += (i === 0 ? 'M ' : ' L ') + n.x + ' ' + n.y;
         }
-        svgContent += '<path d="' + dStr + '" stroke="var(--safe)" stroke-width="2.5" fill="none" stroke-dasharray="6 5" opacity="0.85"/>';
+        svgContent += '<path d="' + dStr + '" stroke="var(--safe)" stroke-width="3" fill="none" stroke-dasharray="7 5" opacity="0.9"/>';
       });
     }
 
     pathSvg.innerHTML = svgContent;
 
-    // 2. Desenha Nós
+    // Desenha Nós (cruzamentos)
     nodesContainer.innerHTML = '';
     nodes.forEach(function (n) {
       var el = document.createElement('div');
@@ -366,23 +435,18 @@
       nodesContainer.appendChild(el);
     });
 
-    // 3. Desenha Nomes de Ruas principais
+    // Desenha Marcos Turísticos e Nomes de Ruas
     tagsContainer.innerHTML = '';
-    var mainTags = [
-      { text: 'R. Galvão Bueno', top: 78, left: 66 },
-      { text: 'R. dos Estudantes', top: 242, left: 96 },
-      { text: 'Av. Liberdade', top: 110, left: 340 }
-    ];
-    mainTags.forEach(function (tg) {
-      var tagEl = document.createElement('div');
-      tagEl.className = 'map-tag';
-      tagEl.style.top = tg.top + 'px';
-      tagEl.style.left = tg.left + 'px';
-      tagEl.textContent = tg.text;
-      tagsContainer.appendChild(tagEl);
+    LANDMARKS.forEach(function (lm) {
+      var badge = document.createElement('div');
+      badge.className = 'landmark-badge';
+      badge.style.left = lm.x + 'px';
+      badge.style.top = (lm.y - 12) + 'px';
+      badge.textContent = lm.text;
+      tagsContainer.appendChild(badge);
     });
 
-    // 4. Desenha Agentes
+    // Desenha Agentes
     agentsContainer.innerHTML = '';
     if (activeTab === 'tab-mapa') {
       agents.forEach(function (ag) {
@@ -395,7 +459,6 @@
       });
     }
 
-    // 5. Renderiza a aba ativa no overlay
     renderActiveTabOverlay();
   }
 
@@ -403,7 +466,6 @@
     overlayContainer.innerHTML = '';
 
     if (activeTab === 'tab-custo') {
-      // Mostra f(n) = g(n) + h(n) para cada nó a partir de N1
       var res = findPath('N1', true);
       if (res) {
         nodes.forEach(function (n) {
@@ -418,16 +480,15 @@
           tag.style.left = n.x + 'px';
           tag.style.top = n.y + 'px';
           tag.innerHTML = 'f:' + Math.round(f) + ' (g:' + Math.round(g) + '+h:' + Math.round(h) + ')';
-          tag.title = n.name + '\nCusto g(n): ' + Math.round(g) + ' | Heurística h(n): ' + Math.round(h);
           overlayContainer.appendChild(tag);
         });
       }
 
       var card = document.createElement('div');
       card.className = 'overlay-card';
-      card.innerHTML = '<div style="font-weight:700; color:var(--safe); margin-bottom:4px;">Custo Heurístico f(n) = g(n) + h(n)</div>' +
+      card.innerHTML = '<div style="font-weight:700; color:var(--cyan); margin-bottom:4px;">Análise do Custo f(n) = g(n) + h(n)</div>' +
         '<div style="font-size:12px; color:var(--text-muted);">' +
-        'Cada nó exibe o custo percorrido <strong>g(n)</strong> somado à estimativa Euclidiana <strong>h(n)</strong> até a saída. O A* sempre prioriza o menor <strong>f(n)</strong>.' +
+        'Cada nó exibe o custo de rota percorrido <strong>g(n)</strong> somado à heurística Euclidiana <strong>h(n)</strong>. O A* sempre expande primeiro o nó com menor <strong>f(n)</strong>.' +
         '</div>';
       overlayContainer.appendChild(card);
 
@@ -440,12 +501,12 @@
       var cardNos = document.createElement('div');
       cardNos.className = 'overlay-card';
       cardNos.innerHTML = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">' +
-        '<span style="font-weight:700; color:var(--amber);">Espaço de Busca — Nós Explorados</span>' +
+        '<span style="font-weight:700; color:var(--amber);">Espaço de Busca — A*</span>' +
         '<span class="badge-savings">' + savingsPct + '% de nós poupados</span>' +
         '</div>' +
         '<div style="font-size:12px; color:var(--text-muted); line-height:1.5;">' +
-        '• <span style="color:var(--amber); font-weight:600;">Amarelo pulsante</span>: Fila de Prioridade (Open Set)<br>' +
-        '• <span style="color:#c084fc; font-weight:600;">Roxo</span>: Nós já avaliados e fechados (Closed Set: ' + nodesExploredCount + '/' + totalGraphNodes + ' nós)' +
+        '• <span style="color:var(--amber); font-weight:600;">Amarelo</span>: Fila de Prioridade (Open Set)<br>' +
+        '• <span style="color:var(--purple); font-weight:600;">Roxo</span>: Nós já avaliados e expandidos (Closed Set: ' + nodesExploredCount + '/' + totalGraphNodes + ' nós)' +
         '</div>';
       overlayContainer.appendChild(cardNos);
 
@@ -462,8 +523,8 @@
 
       var cardComp = document.createElement('div');
       cardComp.className = 'overlay-card';
-      cardComp.innerHTML = '<div style="font-weight:700; color:var(--text); margin-bottom:6px; font-family:\'Space Grotesk\', sans-serif;">' +
-        'Comparativo de Desempenho: A* vs. Dijkstra' +
+      cardComp.innerHTML = '<div style="font-weight:700; color:var(--text); margin-bottom:6px;">' +
+        'Comparativo para a Banca Julgadora: A* vs. Dijkstra' +
         '</div>' +
         '<div class="compare-grid">' +
         '  <div class="compare-box astar-box">' +
@@ -483,7 +544,7 @@
     }
   }
 
-  /* ---------- 7. TROCA DE TABS DO PAINEL CENTRAL (CHIPS) ---------- */
+  /* ---------- 8. INTERAÇÃO DAS TABS DO MAPA ---------- */
   var chips = mapToolbar.querySelectorAll('.chip');
   chips.forEach(function (chip) {
     chip.addEventListener('click', function () {
@@ -492,9 +553,9 @@
       activeTab = chip.dataset.tab || 'tab-mapa';
 
       var tabNames = {
-        'tab-mapa': 'Visualização Geral do Mapa',
+        'tab-mapa': 'Visão Geral do Mapa',
         'tab-custo': 'Análise de Custo f(n) = g(n) + h(n)',
-        'tab-nos': 'Nós Explorados e Espaço de Busca',
+        'tab-nos': 'Nós Explorados e Busca',
         'tab-comparar': 'Comparativo A* vs. Dijkstra'
       };
       addLog('Aba selecionada: ' + (tabNames[activeTab] || activeTab));
@@ -502,7 +563,7 @@
     });
   });
 
-  /* ---------- 8. LÓGICA DE SIMULAÇÃO E MOVIMENTAÇÃO DE AGENTES ---------- */
+  /* ---------- 9. SIMULAÇÃO E MOVIMENTAÇÃO DE AGENTES ---------- */
   function formatTime(totalSec) {
     var m = Math.floor(totalSec / 60);
     var s = totalSec % 60;
@@ -590,14 +651,9 @@
     }
   }
 
-  function rndAgentId() {
-    return String(Math.floor(Math.random() * totalAgentes) + 1).padStart(2, '0');
-  }
-
   function tick() {
     elapsedSeconds += 1;
 
-    // Atualiza movimento real dos agentes ao longo de suas rotas A*
     var stepDelta = 0.25 * speed;
     agents.forEach(function (ag) {
       if (ag.evacuated) return;
@@ -607,9 +663,8 @@
         if (nEvac && nEvac.type === 'exit') {
           ag.evacuated = true;
           evacuados++;
-          addLog('<span class="hl">Agente #' + String(ag.id).padStart(2, '0') + ' evacuou via ' + nEvac.name + '</span>');
+          addLog('<span class="hl">Agente evacuou via ' + nEvac.name + '</span>');
         } else {
-          // Tenta recalcular caminho
           var newRes = findPath(ag.currentNodeId, true);
           if (newRes) {
             ag.path = newRes.path;
@@ -630,11 +685,10 @@
         if (currNode && currNode.type === 'exit') {
           ag.evacuated = true;
           evacuados++;
-          addLog('<span class="hl">Agente #' + String(ag.id).padStart(2, '0') + ' evacuou via ' + currNode.name + '</span>');
+          addLog('<span class="hl">Agente evacuou via ' + currNode.name + '</span>');
         }
       }
 
-      // Interpola coordenadas (x,y)
       if (!ag.evacuated && ag.path && ag.pathIndex < ag.path.length - 1) {
         var nFrom = getNode(ag.path[ag.pathIndex]);
         var nTo   = getNode(ag.path[ag.pathIndex + 1]);
@@ -671,13 +725,7 @@
     }
   }
 
-  /* ---------- 9. BOTÕES DE CONTROLE ---------- */
-  function flashButton(btn, className) {
-    btn.classList.remove(className);
-    void btn.offsetWidth;
-    btn.classList.add(className);
-  }
-
+  /* ---------- 10. BOTÕES DE CONTROLE ---------- */
   btnIniciar.addEventListener('click', function () {
     if (state === STATE.RUNNING) return;
     if (state === STATE.STOPPED) addLog('Simulação iniciada — ' + totalAgentes + ' agentes');
@@ -687,7 +735,6 @@
     startTimer();
     btnIniciar.textContent = 'Simulação rodando';
     btnPausar.textContent = '⏸ Pausar';
-    flashButton(btnIniciar, 'flash-white');
   });
 
   btnPausar.addEventListener('click', function () {
@@ -697,7 +744,6 @@
     addLog('Simulação pausada');
     btnIniciar.textContent = '▶ Iniciar simulação';
     btnPausar.textContent = 'Simulação pausada';
-    flashButton(btnPausar, 'flash-primary');
   });
 
   btnReiniciar.addEventListener('click', function () {
@@ -724,11 +770,10 @@
 
     btnIniciar.textContent = '▶ Iniciar simulação';
     btnPausar.textContent = '⏸ Pausar';
-    flashButton(btnReiniciar, 'flash-primary');
     renderGraph();
   });
 
-  /* ---------- 10. FERRAMENTAS DO MAPA (Bloqueio, Saída, Pessoa) ---------- */
+  /* ---------- 11. FERRAMENTAS DO MAPA ---------- */
   var activeTool = null;
 
   toolButtons.forEach(function (btn) {
@@ -762,7 +807,6 @@
     var y = Math.round(evt.clientY - rect.top);
 
     if (activeTool === 'bloqueio') {
-      // Encontra nó mais próximo ou cria nó bloqueado
       var closest = null;
       var minDist = Infinity;
       nodes.forEach(function (n) {
@@ -775,18 +819,15 @@
         addLog('<span class="warn">Nó ' + closest.name + ' foi bloqueado (incêndio/risco)</span>');
       } else {
         var newId = 'NB' + (nodes.length + 1);
-        var newNode = { id: newId, name: 'Bloqueio (' + x + ',' + y + ')', x: x, y: y, type: 'blocked' };
-        nodes.push(newNode);
-        addLog('<span class="warn">Novo ponto de risco bloqueado adicionado ao mapa</span>');
+        nodes.push({ id: newId, name: 'Bloqueio (' + x + ',' + y + ')', x: x, y: y, type: 'blocked' });
+        addLog('<span class="warn">Novo ponto de risco adicionado</span>');
       }
       recalculateAllAgentPaths();
 
     } else if (activeTool === 'saida') {
       var newExitId = 'NE' + (nodes.length + 1);
-      var newExit = { id: newExitId, name: 'Nova Saída (' + x + ',' + y + ')', x: x, y: y, type: 'exit' };
-      nodes.push(newExit);
+      nodes.push({ id: newExitId, name: 'Nova Saída (' + x + ',' + y + ')', x: x, y: y, type: 'exit' });
 
-      // Conecta com o nó mais próximo
       var nearest = null;
       var minD = Infinity;
       nodes.forEach(function (n) {
@@ -798,7 +839,7 @@
       if (nearest) {
         edges.push({ from: newExitId, to: nearest.id, weight: Math.round(minD), name: 'Acesso Saída' });
       }
-      addLog('<span class="hl">Nova saída segura cadastrada no mapa</span>');
+      addLog('<span class="hl">Nova saída segura cadastrada</span>');
       recalculateAllAgentPaths();
 
     } else if (activeTool === 'pessoa') {
@@ -814,14 +855,14 @@
 
       fieldAgentes.textContent = totalAgentes;
       statTotal.textContent = totalAgentes;
-      addLog('Novo agente #' + String(totalAgentes).padStart(2, '0') + ' adicionado ao mapa');
+      addLog('Novo agente adicionado ao mapa');
       recalculateAllAgentPaths();
     }
 
     renderGraph();
   });
 
-  /* ---------- 11. SLIDER DE VELOCIDADE ---------- */
+  /* ---------- 12. SLIDER DE VELOCIDADE ---------- */
   var speedTrack = document.getElementById('speed-track');
   var speedFill  = document.getElementById('speed-fill');
   var speedThumb = document.getElementById('speed-thumb');
@@ -861,7 +902,7 @@
   document.addEventListener('mousemove', moveDrag);
   document.addEventListener('mouseup', endDrag);
 
-  /* ---------- 12. INICIALIZAÇÃO ---------- */
+  /* ---------- 13. INICIALIZAÇÃO ---------- */
   applySpeed(1.5);
   initAgents();
   recalculateAllAgentPaths();
