@@ -39,6 +39,7 @@
   btnStartHero.addEventListener('click', function () {
     urbanisaModal.style.display = 'none';
     addLog('URBANISA TECH — Simulação iniciada pela tela de apresentação');
+    setTimeout(function () { leafletMap.invalidateSize(); }, 50);
   });
 
   btnTutorialHero.addEventListener('click', function () {
@@ -80,6 +81,10 @@
       btn.classList.add('active');
       var viewEl = document.getElementById(btn.dataset.view);
       if (viewEl) viewEl.classList.add('active');
+
+      if (btn.dataset.view === 'view-simulacao') {
+        setTimeout(function () { leafletMap.invalidateSize(); }, 0);
+      }
     });
   });
 
@@ -100,10 +105,6 @@
 
   var logList          = document.getElementById('log-list');
   var mapCanvas        = document.getElementById('map-canvas');
-  var pathSvg          = document.getElementById('path-svg');
-  var nodesContainer   = document.getElementById('nodes-container');
-  var agentsContainer  = document.getElementById('agents-container');
-  var tagsContainer    = document.getElementById('tags-container');
   var overlayContainer = document.getElementById('overlay-container');
   var mapToolbar       = document.getElementById('map-toolbar');
 
@@ -140,6 +141,53 @@
       logList.appendChild(line);
     });
   }
+
+  /* ---------- 3.5 MAPA REAL — LEAFLET + OPENSTREETMAP ---------- */
+  // O grafo do simulador vive num espaço "modelo" abstrato (x,y em metros aproximados).
+  // Aqui definimos a correspondência entre esse espaço abstrato e a área geográfica
+  // real do Bairro da Liberdade (SP), para desenhar tudo em cima do mapa de verdade.
+  var MODEL_BOUNDS = { minX: 40, maxX: 440, minY: 40, maxY: 360 };
+  var GEO_BOUNDS = { south: -23.5650, north: -23.5530, west: -46.6420, east: -46.6280 };
+
+  function xyToLatLng(x, y) {
+    var lng = GEO_BOUNDS.west + (x - MODEL_BOUNDS.minX) / (MODEL_BOUNDS.maxX - MODEL_BOUNDS.minX) * (GEO_BOUNDS.east - GEO_BOUNDS.west);
+    var lat = GEO_BOUNDS.north - (y - MODEL_BOUNDS.minY) / (MODEL_BOUNDS.maxY - MODEL_BOUNDS.minY) * (GEO_BOUNDS.north - GEO_BOUNDS.south);
+    return { lat: lat, lng: lng };
+  }
+
+  function latLngToXY(lat, lng) {
+    var x = MODEL_BOUNDS.minX + (lng - GEO_BOUNDS.west) / (GEO_BOUNDS.east - GEO_BOUNDS.west) * (MODEL_BOUNDS.maxX - MODEL_BOUNDS.minX);
+    var y = MODEL_BOUNDS.minY + (GEO_BOUNDS.north - lat) / (GEO_BOUNDS.north - GEO_BOUNDS.south) * (MODEL_BOUNDS.maxY - MODEL_BOUNDS.minY);
+    return { x: x, y: y };
+  }
+
+  // "Efeito parede": o usuário pode navegar dentro da Liberdade, mas não sai da área
+  var WALL_BOUNDS = L.latLngBounds(
+    L.latLng(GEO_BOUNDS.south - 0.0025, GEO_BOUNDS.west - 0.0025),
+    L.latLng(GEO_BOUNDS.north + 0.0025, GEO_BOUNDS.east + 0.0025)
+  );
+
+  var leafletMap = L.map('leaflet-map', {
+    center: [(GEO_BOUNDS.north + GEO_BOUNDS.south) / 2, (GEO_BOUNDS.west + GEO_BOUNDS.east) / 2],
+    zoom: 16,
+    minZoom: 15,
+    maxZoom: 19,
+    maxBounds: WALL_BOUNDS,
+    maxBoundsViscosity: 1.0
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(leafletMap);
+
+  // Camadas redesenhadas a cada frame da simulação
+  var streetsLayer  = L.layerGroup().addTo(leafletMap); // arestas do grafo (ruas)
+  var nodesLayer     = L.layerGroup().addTo(leafletMap); // cruzamentos / saídas / bloqueios
+  var routesLayer    = L.layerGroup().addTo(leafletMap); // rotas calculadas pelo A*
+  var agentsLayer    = L.layerGroup().addTo(leafletMap); // pessoas em evacuação
+  var costTagsLayer  = L.layerGroup().addTo(leafletMap); // rótulos f(n)/g(n)/h(n)
+  var landmarksLayer = L.layerGroup().addTo(leafletMap); // marcos turísticos (estáticos)
 
   /* ---------- 4. GRAFO REALISTA DO BAIRRO DA LIBERDADE ---------- */
   var INITIAL_NODES = [
@@ -184,6 +232,17 @@
 
   var nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
   var edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
+
+  // Marcos turísticos não mudam de posição — desenhamos uma única vez sobre o mapa real
+  LANDMARKS.forEach(function (lm) {
+    var p = xyToLatLng(lm.x, lm.y);
+    var icon = L.divIcon({
+      className: '',
+      html: '<div class="landmark-badge">' + lm.text + '</div>',
+      iconSize: null
+    });
+    L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(landmarksLayer);
+  });
 
   function getNode(id) {
     for (var i = 0; i < nodes.length; i++) {
@@ -368,26 +427,29 @@
     }
   }
 
-  /* ---------- 7. DESENHO DO MAPA REALISTA E OVERLAYS ---------- */
+  /* ---------- 7. DESENHO DO MAPA REAL (LEAFLET) E OVERLAYS ---------- */
   function renderGraph() {
-    var svgContent = '';
+    streetsLayer.clearLayers();
+    nodesLayer.clearLayers();
+    routesLayer.clearLayers();
+    agentsLayer.clearLayers();
 
-    // Desenha quarteirões urbanos (polígonos de prédios da Liberdade)
-    svgContent += '<polygon points="70,100 190,105 150,220 70,220" fill="rgba(30, 41, 59, 0.45)" stroke="rgba(51, 65, 85, 0.6)" stroke-width="1.5"/>';
-    svgContent += '<polygon points="220,105 320,80 280,170 210,190" fill="rgba(30, 41, 59, 0.45)" stroke="rgba(51, 65, 85, 0.6)" stroke-width="1.5"/>';
-    svgContent += '<polygon points="100,270 190,210 260,270 120,330" fill="rgba(30, 41, 59, 0.45)" stroke="rgba(51, 65, 85, 0.6)" stroke-width="1.5"/>';
-
-    // Desenha trechos de ruas (arestas)
+    // Desenha as ruas (arestas do grafo) sobre as ruas reais da Liberdade
     edges.forEach(function (e) {
       var n1 = getNode(e.from);
       var n2 = getNode(e.to);
       if (!n1 || !n2) return;
       var isBlockedEdge = n1.type === 'blocked' || n2.type === 'blocked';
-      var strokeColor = isBlockedEdge ? 'var(--danger)' : '#334155';
-      var dashArray = isBlockedEdge ? '4 4' : 'none';
+      var p1 = xyToLatLng(n1.x, n1.y);
+      var p2 = xyToLatLng(n2.x, n2.y);
 
-      svgContent += '<line x1="' + n1.x + '" y1="' + n1.y + '" x2="' + n2.x + '" y2="' + n2.y + '" ' +
-        'stroke="' + strokeColor + '" stroke-width="4" stroke-linecap="round" stroke-dasharray="' + dashArray + '" opacity="0.9"/>';
+      L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], {
+        color: isBlockedEdge ? '#f43f5e' : '#38bdf8',
+        weight: 4,
+        opacity: 0.85,
+        dashArray: isBlockedEdge ? '4 4' : null,
+        interactive: false
+      }).addTo(streetsLayer);
     });
 
     // Se estiver na aba mapa, desenha rotas do A* dos agentes em verde emerald
@@ -399,63 +461,65 @@
         }
       });
       samplePaths.forEach(function (pth) {
-        var dStr = '';
+        var latlngs = [];
         for (var i = 0; i < pth.length; i++) {
           var n = getNode(pth[i]);
-          if (n) dStr += (i === 0 ? 'M ' : ' L ') + n.x + ' ' + n.y;
+          if (n) {
+            var p = xyToLatLng(n.x, n.y);
+            latlngs.push([p.lat, p.lng]);
+          }
         }
-        svgContent += '<path d="' + dStr + '" stroke="var(--safe)" stroke-width="3" fill="none" stroke-dasharray="7 5" opacity="0.9"/>';
+        L.polyline(latlngs, {
+          color: '#10b981',
+          weight: 3,
+          opacity: 0.9,
+          dashArray: '7 5',
+          interactive: false
+        }).addTo(routesLayer);
       });
     }
 
-    pathSvg.innerHTML = svgContent;
+    // Pré-calcula os resultados de busca usados para colorir os nós (evita recalcular por nó)
+    var sampleResNos = activeTab === 'tab-nos' ? findPath('N1', true) : null;
+    var astarResComp = activeTab === 'tab-comparar' ? findPath('N1', true) : null;
+    var dijkResComp  = activeTab === 'tab-comparar' ? findPath('N1', false) : null;
 
-    // Desenha Nós (cruzamentos)
-    nodesContainer.innerHTML = '';
+    // Desenha os nós (cruzamentos / saídas / bloqueios) como marcadores reais
     nodes.forEach(function (n) {
-      var el = document.createElement('div');
-      el.className = 'node ' + (n.type !== 'normal' ? n.type : '');
-      el.style.left = n.x + 'px';
-      el.style.top = n.y + 'px';
-      el.title = n.name;
+      var classes = ['node'];
+      if (n.type !== 'normal') classes.push(n.type);
 
-      if (activeTab === 'tab-nos') {
-        var sampleRes = findPath('N1', true);
-        if (sampleRes) {
-          if (sampleRes.openSet.indexOf(n.id) !== -1) el.classList.add('open-set');
-          else if (sampleRes.closedSet.indexOf(n.id) !== -1) el.classList.add('closed-set');
-        }
+      if (activeTab === 'tab-nos' && sampleResNos) {
+        if (sampleResNos.openSet.indexOf(n.id) !== -1) classes.push('open-set');
+        else if (sampleResNos.closedSet.indexOf(n.id) !== -1) classes.push('closed-set');
       } else if (activeTab === 'tab-comparar') {
-        var astarRes = findPath('N1', true);
-        var dijkRes = findPath('N1', false);
-        if (astarRes && astarRes.closedSet.indexOf(n.id) !== -1) el.classList.add('closed-set');
-        else if (dijkRes && dijkRes.closedSet.indexOf(n.id) !== -1) el.classList.add('dijkstra-visited');
+        if (astarResComp && astarResComp.closedSet.indexOf(n.id) !== -1) classes.push('closed-set');
+        else if (dijkResComp && dijkResComp.closedSet.indexOf(n.id) !== -1) classes.push('dijkstra-visited');
       }
 
-      nodesContainer.appendChild(el);
+      var p = xyToLatLng(n.x, n.y);
+      var icon = L.divIcon({
+        className: '',
+        html: '<div class="' + classes.join(' ') + '" title="' + n.name.replace(/"/g, '&quot;') + '"></div>',
+        iconSize: [13, 13]
+      });
+
+      // interactive:false faz o clique "atravessar" o marcador e chegar até o mapa —
+      // é isso que permite clicar em cima de um nó para bloqueá-lo, por exemplo.
+      L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(nodesLayer);
     });
 
-    // Desenha Marcos Turísticos e Nomes de Ruas
-    tagsContainer.innerHTML = '';
-    LANDMARKS.forEach(function (lm) {
-      var badge = document.createElement('div');
-      badge.className = 'landmark-badge';
-      badge.style.left = lm.x + 'px';
-      badge.style.top = (lm.y - 12) + 'px';
-      badge.textContent = lm.text;
-      tagsContainer.appendChild(badge);
-    });
-
-    // Desenha Agentes
-    agentsContainer.innerHTML = '';
+    // Desenha os agentes (pessoas evacuando) em tempo real
     if (activeTab === 'tab-mapa') {
       agents.forEach(function (ag) {
         if (ag.evacuated) return;
-        var agEl = document.createElement('div');
-        agEl.className = 'agent';
-        agEl.style.left = ag.x + 'px';
-        agEl.style.top = ag.y + 'px';
-        agentsContainer.appendChild(agEl);
+        var p = xyToLatLng(ag.x, ag.y);
+        var icon = L.divIcon({
+          className: '',
+          html: '<div class="agent"></div>',
+          iconSize: [11, 11]
+        });
+        L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(agentsLayer);
       });
     }
 
@@ -464,6 +528,7 @@
 
   function renderActiveTabOverlay() {
     overlayContainer.innerHTML = '';
+    costTagsLayer.clearLayers();
 
     if (activeTab === 'tab-custo') {
       var res = findPath('N1', true);
@@ -475,12 +540,13 @@
           var h = f !== Infinity && g !== Infinity ? (f - g) : 0;
           if (g === Infinity) return;
 
-          var tag = document.createElement('div');
-          tag.className = 'cost-tag';
-          tag.style.left = n.x + 'px';
-          tag.style.top = n.y + 'px';
-          tag.innerHTML = 'f:' + Math.round(f) + ' (g:' + Math.round(g) + '+h:' + Math.round(h) + ')';
-          overlayContainer.appendChild(tag);
+          var p = xyToLatLng(n.x, n.y);
+          var icon = L.divIcon({
+            className: '',
+            html: '<div class="cost-tag">f:' + Math.round(f) + ' (g:' + Math.round(g) + '+h:' + Math.round(h) + ')</div>',
+            iconSize: null
+          });
+          L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(costTagsLayer);
         });
       }
 
@@ -799,12 +865,12 @@
     });
   });
 
-  mapCanvas.addEventListener('click', function (evt) {
+  leafletMap.on('click', function (evt) {
     if (!activeTool) return;
 
-    var rect = mapCanvas.getBoundingClientRect();
-    var x = Math.round(evt.clientX - rect.left);
-    var y = Math.round(evt.clientY - rect.top);
+    var xy = latLngToXY(evt.latlng.lat, evt.latlng.lng);
+    var x = xy.x;
+    var y = xy.y;
 
     if (activeTool === 'bloqueio') {
       var closest = null;
@@ -819,14 +885,14 @@
         addLog('<span class="warn">Nó ' + closest.name + ' foi bloqueado (incêndio/risco)</span>');
       } else {
         var newId = 'NB' + (nodes.length + 1);
-        nodes.push({ id: newId, name: 'Bloqueio (' + x + ',' + y + ')', x: x, y: y, type: 'blocked' });
+        nodes.push({ id: newId, name: 'Bloqueio (' + Math.round(x) + ',' + Math.round(y) + ')', x: x, y: y, type: 'blocked' });
         addLog('<span class="warn">Novo ponto de risco adicionado</span>');
       }
       recalculateAllAgentPaths();
 
     } else if (activeTool === 'saida') {
       var newExitId = 'NE' + (nodes.length + 1);
-      nodes.push({ id: newExitId, name: 'Nova Saída (' + x + ',' + y + ')', x: x, y: y, type: 'exit' });
+      nodes.push({ id: newExitId, name: 'Nova Saída (' + Math.round(x) + ',' + Math.round(y) + ')', x: x, y: y, type: 'exit' });
 
       var nearest = null;
       var minD = Infinity;
@@ -903,6 +969,9 @@
   document.addEventListener('mouseup', endDrag);
 
   /* ---------- 13. INICIALIZAÇÃO ---------- */
+  window.addEventListener('resize', function () { leafletMap.invalidateSize(); });
+  setTimeout(function () { leafletMap.invalidateSize(); }, 100);
+
   applySpeed(1.5);
   initAgents();
   recalculateAllAgentPaths();
