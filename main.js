@@ -512,50 +512,8 @@
     routesLayer.clearLayers();
     agentsLayer.clearLayers();
 
-    // Desenha as ruas (arestas do grafo) sobre as ruas reais da Liberdade
-    edges.forEach(function (e) {
-      var n1 = getNode(e.from);
-      var n2 = getNode(e.to);
-      if (!n1 || !n2) return;
-      var isBlockedEdge = n1.type === 'blocked' || n2.type === 'blocked';
-      var p1 = xyToLatLng(n1.x, n1.y);
-      var p2 = xyToLatLng(n2.x, n2.y);
-
-      L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], {
-        color: isBlockedEdge ? '#f43f5e' : '#38bdf8',
-        weight: 4,
-        opacity: 0.85,
-        dashArray: isBlockedEdge ? '4 4' : null,
-        interactive: false
-      }).addTo(streetsLayer);
-    });
-
-    // Se estiver na aba mapa, desenha rotas do A* dos agentes em verde emerald
-    if (activeTab === 'tab-mapa') {
-      var samplePaths = [];
-      agents.forEach(function (ag) {
-        if (!ag.evacuated && ag.path && ag.path.length > 1 && samplePaths.length < 4) {
-          samplePaths.push(ag.path);
-        }
-      });
-      samplePaths.forEach(function (pth) {
-        var latlngs = [];
-        for (var i = 0; i < pth.length; i++) {
-          var n = getNode(pth[i]);
-          if (n) {
-            var p = xyToLatLng(n.x, n.y);
-            latlngs.push([p.lat, p.lng]);
-          }
-        }
-        L.polyline(latlngs, {
-          color: '#10b981',
-          weight: 3,
-          opacity: 0.9,
-          dashArray: '7 5',
-          interactive: false
-        }).addTo(routesLayer);
-      });
-    }
+    // Desenhos traçados de ruas e rotas sobre o mapa foram removidos
+    // para exibir o mapa limpo com marcadores e agentes.
 
     // Pré-calcula os resultados de busca usados para colorir os nós (evita recalcular por nó)
     var sampleResNos = activeTab === 'tab-nos' ? findPath('N1', true) : null;
