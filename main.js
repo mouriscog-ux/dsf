@@ -655,19 +655,7 @@
     });
 
     // Desenha os agentes (pessoas evacuando) em tempo real nas ruas do Leaflet
-    if (activeTab === 'tab-mapa') {
-      agents.forEach(function (ag) {
-        if (ag.evacuated) return;
-        var p = (ag.lat !== undefined && ag.lng !== undefined) ? { lat: ag.lat, lng: ag.lng } : xyToLatLng(ag.x, ag.y);
-        var icon = L.divIcon({
-          className: '',
-          html: '<div class="agent"></div>',
-          iconSize: [11, 11],
-          iconAnchor: [5.5, 5.5]
-        });
-        L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(agentsLayer);
-      });
-    }
+    updateAgentMarkers();
 
     renderActiveTabOverlay();
   }
@@ -863,16 +851,74 @@
     }
   }
 
-  var isTicking = false;
+  var agentMarkersMap = new Map();
 
-  async function tick() {
-    if (isTicking) return;
-    isTicking = true;
+  function clearAgentMarkers() {
+    agentMarkersMap.forEach(function (marker) {
+      agentsLayer.removeLayer(marker);
+    });
+    agentMarkersMap.clear();
+  }
 
-    try {
-      elapsedSeconds += 1;
+  function updateAgentMarkers() {
+    if (activeTab !== 'tab-mapa') {
+      clearAgentMarkers();
+      return;
+    }
 
-      var stepDelta = 0.25 * speed;
+    var isRunning = (state === STATE.RUNNING);
+    var activeAgentIds = new Set();
+    agents.forEach(function (ag) {
+      if (!ag.evacuated) activeAgentIds.add(ag.id);
+    });
+
+    agentMarkersMap.forEach(function (marker, id) {
+      if (!activeAgentIds.has(id)) {
+        agentsLayer.removeLayer(marker);
+        agentMarkersMap.delete(id);
+      }
+    });
+
+    agents.forEach(function (ag) {
+      if (ag.evacuated) return;
+      var p = (ag.lat !== undefined && ag.lng !== undefined) ? { lat: ag.lat, lng: ag.lng } : xyToLatLng(ag.x, ag.y);
+
+      if (!agentMarkersMap.has(ag.id)) {
+        var icon = L.divIcon({
+          className: '',
+          html: '<div class="agent' + (isRunning ? ' walking' : '') + '"></div>',
+          iconSize: [11, 11],
+          iconAnchor: [5.5, 5.5]
+        });
+        var marker = L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(agentsLayer);
+        agentMarkersMap.set(ag.id, marker);
+      } else {
+        var marker = agentMarkersMap.get(ag.id);
+        marker.setLatLng([p.lat, p.lng]);
+
+        var el = marker.getElement();
+        if (el) {
+          var agentDiv = el.querySelector('.agent');
+          if (agentDiv) {
+            if (isRunning) agentDiv.classList.add('walking');
+            else agentDiv.classList.remove('walking');
+          }
+        }
+      }
+    });
+  }
+
+  var lastAnimTime = null;
+
+  function animateLoop(timestamp) {
+    if (!lastAnimTime) lastAnimTime = timestamp;
+    var dt = (timestamp - lastAnimTime) / 1000;
+    lastAnimTime = timestamp;
+    if (dt > 0.1) dt = 0.1;
+
+    if (state === STATE.RUNNING) {
+      var stepRate = 0.35 * speed * dt;
+
       agents.forEach(function (ag) {
         if (ag.evacuated) return;
 
@@ -893,7 +939,7 @@
           return;
         }
 
-        ag.segmentProgress += stepDelta;
+        ag.segmentProgress += stepRate;
         if (ag.segmentProgress >= 1) {
           ag.segmentProgress = 0;
           ag.pathIndex++;
@@ -919,8 +965,6 @@
         }
       });
 
-      await recalculateAllAgentPathsAsync();
-
       if (evacuados >= totalAgentes) {
         addLog('<span class="hl">Todos os ' + totalAgentes + ' agentes foram evacuados com sucesso!</span>');
         stopTimer();
@@ -928,11 +972,22 @@
       }
 
       updateStatsDisplay();
-      pushChartPoint();
-      renderGraph();
-    } finally {
-      isTicking = false;
     }
+
+    if (activeTab === 'tab-mapa') {
+      updateAgentMarkers();
+    }
+
+    requestAnimationFrame(animateLoop);
+  }
+
+  requestAnimationFrame(animateLoop);
+
+  async function tick() {
+    if (state !== STATE.RUNNING) return;
+    elapsedSeconds += 1;
+    await recalculateAllAgentPathsAsync();
+    pushChartPoint();
   }
 
   function startTimer() {
@@ -977,6 +1032,7 @@
     edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
     totalAgentes = 50;
 
+    clearAgentMarkers();
     randomizeExits();
     initAgents();
     await recalculateAllAgentPathsAsync();
