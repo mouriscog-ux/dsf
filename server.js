@@ -6,18 +6,18 @@ const PORT = process.env.PORT || 8080;
 
 // Graph data of Liberdade neighbourhood for backend API (Real Leaflet/OpenStreetMap street coordinates)
 const LIBERDADE_NODES = [
-  { id: 'N1', name: 'Rua Galvão Bueno (Norte)', lat: -23.5546, lng: -46.6353, x: 60, y: 90, type: 'normal' },
-  { id: 'N2', name: 'Cruzamento Galvão x Estudantes', lat: -23.5558, lng: -46.6349, x: 210, y: 95, type: 'normal' },
-  { id: 'N3', name: 'Saída Metrô Liberdade 🚇', lat: -23.5550, lng: -46.6358, x: 340, y: 70, type: 'exit' },
-  { id: 'N4', name: 'Viaduto Cidade de Osaka 🌉', lat: -23.5552, lng: -46.6351, x: 140, y: 60, type: 'blocked' },
-  { id: 'N5', name: 'Rua dos Estudantes (Oeste)', lat: -23.5560, lng: -46.6362, x: 90, y: 260, type: 'normal' },
-  { id: 'N6', name: 'Cruzamento Estudantes x Américo', lat: -23.5566, lng: -46.6342, x: 200, y: 200, type: 'normal' },
-  { id: 'N7', name: 'Praça da Liberdade 🏙️', lat: -23.5558, lng: -46.6364, x: 300, y: 180, type: 'exit' },
-  { id: 'N8', name: 'Rua da Glória (Sul)', lat: -23.5572, lng: -46.6346, x: 160, y: 230, type: 'normal' },
-  { id: 'N9', name: 'Rua Américo de Campos', lat: -23.5570, lng: -46.6334, x: 270, y: 270, type: 'normal' },
-  { id: 'N10', name: 'Avenida Liberdade 🚦', lat: -23.5582, lng: -46.6366, x: 420, y: 130, type: 'exit' },
-  { id: 'N11', name: 'Rua Conselheiro Furtado', lat: -23.5568, lng: -46.6322, x: 380, y: 230, type: 'normal' },
-  { id: 'N12', name: 'Rua São Joaquim', lat: -23.5586, lng: -46.6352, x: 110, y: 340, type: 'normal' }
+  { id: 'N1', name: 'Rua Galvão Bueno (Norte)', lat: -23.5552, lng: -46.6353, x: 60, y: 90, type: 'normal' },
+  { id: 'N2', name: 'Cruzamento Galvão x Estudantes', lat: -23.5566, lng: -46.6347, x: 210, y: 95, type: 'normal' },
+  { id: 'N3', name: 'Saída Metrô Liberdade 🚇', lat: -23.5553, lng: -46.6357, x: 340, y: 70, type: 'exit' },
+  { id: 'N4', name: 'Viaduto Cidade de Osaka 🌉', lat: -23.5559, lng: -46.6350, x: 140, y: 60, type: 'blocked' },
+  { id: 'N5', name: 'Rua dos Estudantes (Oeste)', lat: -23.5564, lng: -46.6356, x: 90, y: 260, type: 'normal' },
+  { id: 'N6', name: 'Cruzamento Galvão x Américo', lat: -23.5574, lng: -46.6344, x: 200, y: 200, type: 'normal' },
+  { id: 'N7', name: 'Praça da Liberdade 🏙️', lat: -23.5557, lng: -46.6360, x: 300, y: 180, type: 'exit' },
+  { id: 'N8', name: 'Rua da Glória (Sul)', lat: -23.5573, lng: -46.6343, x: 160, y: 230, type: 'normal' },
+  { id: 'N9', name: 'Rua Américo de Campos', lat: -23.5575, lng: -46.6335, x: 270, y: 270, type: 'normal' },
+  { id: 'N10', name: 'Avenida Liberdade 🚦', lat: -23.5574, lng: -46.6362, x: 420, y: 130, type: 'exit' },
+  { id: 'N11', name: 'Rua Conselheiro Furtado', lat: -23.5571, lng: -46.6325, x: 380, y: 230, type: 'normal' },
+  { id: 'N12', name: 'Rua São Joaquim', lat: -23.5587, lng: -46.6341, x: 110, y: 340, type: 'normal' }
 ];
 
 const LIBERDADE_EDGES = [
