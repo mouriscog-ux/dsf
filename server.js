@@ -39,31 +39,75 @@ const LIBERDADE_EDGES = [
 ];
 
 // Helper: Euclidean distance heuristic h(n)
-function heuristic(nodeA, nodeB) {
+function heuristicToNode(nodeA, nodeB) {
   const dx = nodeA.x - nodeB.x;
   const dy = nodeA.y - nodeB.y;
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-// Pathfinding implementation (A* vs Dijkstra)
-function runPathfinding(startId, goalId, blockedIds = [], useHeuristic = true) {
-  const nodesMap = new Map(LIBERDADE_NODES.map(n => [n.id, n]));
-  const startNode = nodesMap.get(startId);
-  const goalNode = nodesMap.get(goalId);
+function calculateHeuristic(node, exitNodes, goalNode, useHeuristic) {
+  if (!useHeuristic) return 0;
+  if (goalNode) return heuristicToNode(node, goalNode);
+  if (!exitNodes || exitNodes.length === 0) return 0;
+  
+  let minH = Infinity;
+  for (const exit of exitNodes) {
+    const h = heuristicToNode(node, exit);
+    if (h < minH) minH = h;
+  }
+  return minH === Infinity ? 0 : minH;
+}
 
-  if (!startNode || !goalNode) return null;
+// Build adjacency graph merging static and dynamic nodes/edges
+function buildGraph(dynamicNodes = [], dynamicEdges = [], blockedIds = []) {
+  const nodesMap = new Map();
+  LIBERDADE_NODES.forEach(n => nodesMap.set(n.id, { ...n }));
+  if (Array.isArray(dynamicNodes)) {
+    dynamicNodes.forEach(n => {
+      if (n && n.id) nodesMap.set(n.id, { ...n });
+    });
+  }
+
+  const blockedSet = new Set(blockedIds || []);
+  const allNodes = Array.from(nodesMap.values());
+  const exitNodes = allNodes.filter(n => n.type === 'exit' && !blockedSet.has(n.id));
 
   const adj = new Map();
-  LIBERDADE_NODES.forEach(n => adj.set(n.id, []));
-  LIBERDADE_EDGES.forEach(e => {
-    if (blockedIds.includes(e.from) || blockedIds.includes(e.to)) return;
+  allNodes.forEach(n => adj.set(n.id, []));
+
+  const allEdges = [...LIBERDADE_EDGES, ...(Array.isArray(dynamicEdges) ? dynamicEdges : [])];
+  allEdges.forEach(e => {
+    if (!e || !e.from || !e.to) return;
+    if (blockedSet.has(e.from) || blockedSet.has(e.to)) return;
     const nFrom = nodesMap.get(e.from);
     const nTo = nodesMap.get(e.to);
-    if (nFrom.type === 'blocked' || nTo.type === 'blocked') return;
+    if (!nFrom || !nTo || nFrom.type === 'blocked' || nTo.type === 'blocked') return;
 
     adj.get(e.from).push({ node: e.to, weight: e.weight });
     adj.get(e.to).push({ node: e.from, weight: e.weight });
   });
+
+  return { nodesMap, adj, exitNodes, allNodes };
+}
+
+// Pathfinding implementation (A* vs Dijkstra with dynamic nodes & multi-exit support)
+function runPathfindingOnGraph(graph, startId, goalId = null, useHeuristic = true, blockedIds = []) {
+  const { nodesMap, adj, exitNodes, allNodes } = graph;
+  const startNode = nodesMap.get(startId);
+  const blockedSet = new Set(blockedIds || []);
+
+  if (!startNode || startNode.type === 'blocked' || blockedSet.has(startId)) {
+    return null;
+  }
+
+  const goalNode = goalId ? nodesMap.get(goalId) : null;
+  if (goalId && (!goalNode || goalNode.type === 'blocked' || blockedSet.has(goalId))) {
+    return null;
+  }
+
+  if (!goalNode && exitNodes.length === 0) {
+    return null;
+  }
 
   const gScore = new Map();
   const fScore = new Map();
@@ -72,13 +116,13 @@ function runPathfinding(startId, goalId, blockedIds = [], useHeuristic = true) {
   const closedSet = new Set();
   const explorationOrder = [];
 
-  LIBERDADE_NODES.forEach(n => {
+  allNodes.forEach(n => {
     gScore.set(n.id, Infinity);
     fScore.set(n.id, Infinity);
   });
 
   gScore.set(startId, 0);
-  const startH = useHeuristic ? heuristic(startNode, goalNode) : 0;
+  const startH = calculateHeuristic(startNode, exitNodes, goalNode, useHeuristic);
   fScore.set(startId, startH);
 
   while (openSet.size > 0) {
@@ -96,8 +140,11 @@ function runPathfinding(startId, goalId, blockedIds = [], useHeuristic = true) {
     closedSet.add(current);
     explorationOrder.push(current);
 
-    if (current === goalId) {
-      // Reconstruct path
+    const currNode = nodesMap.get(current);
+
+    // Goal condition: specific goal or reaching any exit node
+    const isGoalReached = goalNode ? (current === goalId) : (currNode && currNode.type === 'exit');
+    if (isGoalReached) {
       const path = [current];
       let curr = current;
       while (cameFrom.has(curr)) {
@@ -107,11 +154,12 @@ function runPathfinding(startId, goalId, blockedIds = [], useHeuristic = true) {
       return {
         success: true,
         path,
-        cost: gScore.get(goalId),
+        cost: gScore.get(current),
         nodesExplored: closedSet.size,
         explorationOrder,
         closedSet: Array.from(closedSet),
-        openSet: Array.from(openSet)
+        openSet: Array.from(openSet),
+        destinationExit: currNode
       };
     }
 
@@ -124,7 +172,8 @@ function runPathfinding(startId, goalId, blockedIds = [], useHeuristic = true) {
       if (tentativeG < gScore.get(neighborId)) {
         cameFrom.set(neighborId, current);
         gScore.set(neighborId, tentativeG);
-        const h = useHeuristic ? heuristic(nodesMap.get(neighborId), goalNode) : 0;
+        const nbNode = nodesMap.get(neighborId);
+        const h = calculateHeuristic(nbNode, exitNodes, goalNode, useHeuristic);
         fScore.set(neighborId, tentativeG + h);
         openSet.add(neighborId);
       }
@@ -138,8 +187,14 @@ function runPathfinding(startId, goalId, blockedIds = [], useHeuristic = true) {
     nodesExplored: closedSet.size,
     explorationOrder,
     closedSet: Array.from(closedSet),
-    openSet: Array.from(openSet)
+    openSet: Array.from(openSet),
+    destinationExit: null
   };
+}
+
+function runPathfinding(startId, goalId = null, blockedIds = [], useHeuristic = true, dynamicNodes = [], dynamicEdges = []) {
+  const graph = buildGraph(dynamicNodes, dynamicEdges, blockedIds);
+  return runPathfindingOnGraph(graph, startId, goalId, useHeuristic, blockedIds);
 }
 
 const MIME_TYPES = {
@@ -169,16 +224,18 @@ const server = http.createServer((req, res) => {
       try {
         const payload = JSON.parse(body || '{}');
         const startId = payload.startId || 'N1';
-        const goalId = payload.goalId || 'N3';
+        const goalId = payload.goalId || null;
         const blockedIds = payload.blockedIds || [];
+        const dynamicNodes = payload.dynamicNodes || [];
+        const dynamicEdges = payload.dynamicEdges || [];
 
         const startTimeA = process.hrtime();
-        const astarResult = runPathfinding(startId, goalId, blockedIds, true);
+        const astarResult = runPathfinding(startId, goalId, blockedIds, true, dynamicNodes, dynamicEdges);
         const diffA = process.hrtime(startTimeA);
         const timeAstarMs = (diffA[0] * 1000 + diffA[1] / 1e6).toFixed(3);
 
         const startTimeD = process.hrtime();
-        const dijkstraResult = runPathfinding(startId, goalId, blockedIds, false);
+        const dijkstraResult = runPathfinding(startId, goalId, blockedIds, false, dynamicNodes, dynamicEdges);
         const diffD = process.hrtime(startTimeD);
         const timeDijkstraMs = (diffD[0] * 1000 + diffD[1] / 1e6).toFixed(3);
 
@@ -186,6 +243,67 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({
           astar: { ...astarResult, timeMs: timeAstarMs },
           dijkstra: { ...dijkstraResult, timeMs: timeDijkstraMs }
+        }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (parsedUrl.pathname === '/api/pathfind-batch' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const agentsList = Array.isArray(payload.agents) ? payload.agents : [];
+        const blockedIds = payload.blockedIds || [];
+        const dynamicNodes = payload.dynamicNodes || [];
+        const dynamicEdges = payload.dynamicEdges || [];
+        const useHeuristic = payload.useHeuristic !== undefined ? payload.useHeuristic : true;
+
+        const startTime = process.hrtime();
+        const graph = buildGraph(dynamicNodes, dynamicEdges, blockedIds);
+        
+        const results = {};
+        let totalExplored = 0;
+        let totalCost = 0;
+        let validCount = 0;
+
+        for (const ag of agentsList) {
+          const resPath = runPathfindingOnGraph(
+            graph,
+            ag.startId || 'N1',
+            ag.goalId || null,
+            useHeuristic,
+            blockedIds
+          );
+          if (resPath) {
+            results[ag.id] = resPath;
+            if (resPath.success) {
+              totalExplored += resPath.nodesExplored;
+              totalCost += resPath.cost;
+              validCount++;
+            }
+          }
+        }
+
+        const diff = process.hrtime(startTime);
+        const totalTimeMs = (diff[0] * 1000 + diff[1] / 1e6).toFixed(3);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          results,
+          summary: {
+            totalAgents: agentsList.length,
+            validAgents: validCount,
+            avgNodesExplored: validCount > 0 ? (totalExplored / validCount).toFixed(1) : 0,
+            avgCost: validCount > 0 ? (totalCost / validCount).toFixed(1) : 0,
+            totalTimeMs
+          }
         }));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
