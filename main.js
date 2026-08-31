@@ -278,6 +278,11 @@
   }
 
   function distance(nodeA, nodeB) {
+    if (nodeA.lat !== undefined && nodeB.lat !== undefined) {
+      var dLat = (nodeA.lat - nodeB.lat) * 111320;
+      var dLng = (nodeA.lng - nodeB.lng) * 111320 * Math.cos(nodeA.lat * Math.PI / 180);
+      return Math.sqrt(dLat * dLat + dLng * dLng);
+    }
     var dx = nodeA.x - nodeB.x;
     var dy = nodeA.y - nodeB.y;
     return Math.sqrt(dx * dx + dy * dy);
@@ -917,7 +922,7 @@
     if (dt > 0.1) dt = 0.1;
 
     if (state === STATE.RUNNING) {
-      var stepRate = 0.35 * speed * dt;
+      var stepRate = 0.08 * speed * dt;
 
       agents.forEach(function (ag) {
         if (ag.evacuated) return;
@@ -927,10 +932,10 @@
           if (nEvac && nEvac.type === 'exit') {
             ag.evacuated = true;
             evacuados++;
-            addLog('<span class="hl">Agente evacuou via ' + nEvac.name + '</span>');
+            addLog('<span class="hl">Agente evacuou via ponto seguro ' + nEvac.name + ' 🚪</span>');
           } else {
             var newRes = findPath(ag.currentNodeId, true);
-            if (newRes) {
+            if (newRes && newRes.path.length > 1) {
               ag.path = newRes.path;
               ag.pathIndex = 0;
               ag.segmentProgress = 0;
@@ -946,10 +951,16 @@
           ag.currentNodeId = ag.path[ag.pathIndex];
 
           var currNode = getNode(ag.currentNodeId);
-          if (currNode && currNode.type === 'exit') {
-            ag.evacuated = true;
-            evacuados++;
-            addLog('<span class="hl">Agente evacuou via ' + currNode.name + '</span>');
+          if (currNode) {
+            ag.lat = currNode.lat;
+            ag.lng = currNode.lng;
+            ag.x = currNode.x;
+            ag.y = currNode.y;
+            if (currNode.type === 'exit') {
+              ag.evacuated = true;
+              evacuados++;
+              addLog('<span class="hl">Agente evacuou via ponto seguro ' + currNode.name + ' 🚪</span>');
+            }
           }
         }
 
