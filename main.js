@@ -149,7 +149,19 @@
   var MODEL_BOUNDS = { minX: 40, maxX: 440, minY: 40, maxY: 360 };
   var GEO_BOUNDS = { south: -23.5650, north: -23.5530, west: -46.6420, east: -46.6280 };
 
+  function getNodeByXY(x, y) {
+    if (!nodes) return null;
+    for (var i = 0; i < nodes.length; i++) {
+      if (Math.abs(nodes[i].x - x) < 0.1 && Math.abs(nodes[i].y - y) < 0.1) return nodes[i];
+    }
+    return null;
+  }
+
   function xyToLatLng(x, y) {
+    var found = getNodeByXY(x, y);
+    if (found && found.lat !== undefined && found.lng !== undefined) {
+      return { lat: found.lat, lng: found.lng };
+    }
     var lng = GEO_BOUNDS.west + (x - MODEL_BOUNDS.minX) / (MODEL_BOUNDS.maxX - MODEL_BOUNDS.minX) * (GEO_BOUNDS.east - GEO_BOUNDS.west);
     var lat = GEO_BOUNDS.north - (y - MODEL_BOUNDS.minY) / (MODEL_BOUNDS.maxY - MODEL_BOUNDS.minY) * (GEO_BOUNDS.north - GEO_BOUNDS.south);
     return { lat: lat, lng: lng };
@@ -191,18 +203,18 @@
 
   /* ---------- 4. GRAFO REALISTA DO BAIRRO DA LIBERDADE ---------- */
   var INITIAL_NODES = [
-    { id: 'N1', name: 'R. Galvão Bueno (Norte)', x: 60, y: 90, type: 'normal' },
-    { id: 'N2', name: 'Cruzamento Galvão x Estudantes', x: 210, y: 95, type: 'normal' },
-    { id: 'N3', name: 'Estação Metrô Liberdade 🚇', x: 340, y: 70, type: 'exit' },
-    { id: 'N4', name: 'Viaduto Cidade de Osaka 🌉', x: 140, y: 60, type: 'blocked' },
-    { id: 'N5', name: 'R. dos Estudantes (Oeste)', x: 90, y: 260, type: 'normal' },
-    { id: 'N6', name: 'Cruzamento Estudantes x Américo', x: 200, y: 200, type: 'normal' },
-    { id: 'N7', name: 'Praça da Liberdade 🏙️', x: 300, y: 180, type: 'exit' },
-    { id: 'N8', name: 'Rua da Glória (Sul)', x: 160, y: 230, type: 'normal' },
-    { id: 'N9', name: 'Rua Américo de Campos', x: 270, y: 270, type: 'normal' },
-    { id: 'N10', name: 'Avenida Liberdade 🚦', x: 420, y: 130, type: 'exit' },
-    { id: 'N11', name: 'Rua Conselheiro Furtado', x: 380, y: 230, type: 'normal' },
-    { id: 'N12', name: 'Rua São Joaquim', x: 110, y: 340, type: 'normal' }
+    { id: 'N1', name: 'R. Galvão Bueno (Norte)', lat: -23.5546, lng: -46.6353, x: 60, y: 90, type: 'normal' },
+    { id: 'N2', name: 'Cruzamento Galvão x Estudantes', lat: -23.5558, lng: -46.6349, x: 210, y: 95, type: 'normal' },
+    { id: 'N3', name: 'Estação Metrô Liberdade 🚇', lat: -23.5550, lng: -46.6358, x: 340, y: 70, type: 'exit' },
+    { id: 'N4', name: 'Viaduto Cidade de Osaka 🌉', lat: -23.5552, lng: -46.6351, x: 140, y: 60, type: 'blocked' },
+    { id: 'N5', name: 'R. dos Estudantes (Oeste)', lat: -23.5560, lng: -46.6362, x: 90, y: 260, type: 'normal' },
+    { id: 'N6', name: 'Cruzamento Estudantes x Américo', lat: -23.5566, lng: -46.6342, x: 200, y: 200, type: 'normal' },
+    { id: 'N7', name: 'Praça da Liberdade 🏙️', lat: -23.5558, lng: -46.6364, x: 300, y: 180, type: 'exit' },
+    { id: 'N8', name: 'Rua da Glória (Sul)', lat: -23.5572, lng: -46.6346, x: 160, y: 230, type: 'normal' },
+    { id: 'N9', name: 'Rua Américo de Campos', lat: -23.5570, lng: -46.6334, x: 270, y: 270, type: 'normal' },
+    { id: 'N10', name: 'Avenida Liberdade 🚦', lat: -23.5582, lng: -46.6366, x: 420, y: 130, type: 'exit' },
+    { id: 'N11', name: 'Rua Conselheiro Furtado', lat: -23.5568, lng: -46.6322, x: 380, y: 230, type: 'normal' },
+    { id: 'N12', name: 'Rua São Joaquim', lat: -23.5586, lng: -46.6352, x: 110, y: 340, type: 'normal' }
   ];
 
   var INITIAL_EDGES = [
@@ -377,30 +389,37 @@
   var tickTimer = null;
   var agents = [];
 
-  function snapToNearestStreet(x, y) {
+  function snapToNearestStreet(lat, lng) {
     var minDistance = Infinity;
-    var bestPoint = { x: x, y: y, fromNodeId: 'N1', toNodeId: 'N2', progress: 0 };
+    var bestPoint = { lat: lat, lng: lng, x: 0, y: 0, fromNodeId: 'N1', toNodeId: 'N2', progress: 0 };
 
     edges.forEach(function (e) {
       var n1 = getNode(e.from);
       var n2 = getNode(e.to);
       if (!n1 || !n2 || n1.type === 'blocked' || n2.type === 'blocked') return;
 
-      var dx = n2.x - n1.x;
-      var dy = n2.y - n1.y;
-      var lenSq = dx * dx + dy * dy;
+      var n1Lat = n1.lat !== undefined ? n1.lat : xyToLatLng(n1.x, n1.y).lat;
+      var n1Lng = n1.lng !== undefined ? n1.lng : xyToLatLng(n1.x, n1.y).lng;
+      var n2Lat = n2.lat !== undefined ? n2.lat : xyToLatLng(n2.x, n2.y).lat;
+      var n2Lng = n2.lng !== undefined ? n2.lng : xyToLatLng(n2.x, n2.y).lng;
+
+      var dLat = n2Lat - n1Lat;
+      var dLng = n2Lng - n1Lng;
+      var lenSq = dLat * dLat + dLng * dLng;
       if (lenSq === 0) return;
 
-      var t = Math.max(0, Math.min(1, ((x - n1.x) * dx + (y - n1.y) * dy) / lenSq));
-      var projX = n1.x + t * dx;
-      var projY = n1.y + t * dy;
-      var dist = Math.hypot(x - projX, y - projY);
+      var t = Math.max(0, Math.min(1, ((lat - n1Lat) * dLat + (lng - n1Lng) * dLng) / lenSq));
+      var projLat = n1Lat + t * dLat;
+      var projLng = n1Lng + t * dLng;
+      var dist = Math.hypot(lat - projLat, lng - projLng);
 
       if (dist < minDistance) {
         minDistance = dist;
         bestPoint = {
-          x: projX,
-          y: projY,
+          lat: projLat,
+          lng: projLng,
+          x: n1.x + t * (n2.x - n1.x),
+          y: n1.y + t * (n2.y - n1.y),
           fromNodeId: e.from,
           toNodeId: e.to,
           progress: t
@@ -463,8 +482,11 @@
     var nTo = getNode(randEdge.to);
     var t = Math.random();
 
+    var posLat = nFrom.lat + (nTo.lat - nFrom.lat) * t;
+    var posLng = nFrom.lng + (nTo.lng - nFrom.lng) * t;
     var posX = nFrom.x + (nTo.x - nFrom.x) * t;
     var posY = nFrom.y + (nTo.y - nFrom.y) * t;
+
     var startId = t >= 0.5 ? randEdge.to : randEdge.from;
     var res = findPath(startId, true);
 
@@ -474,6 +496,8 @@
       path: res ? res.path : [startId],
       pathIndex: 0,
       segmentProgress: t,
+      lat: posLat,
+      lng: posLng,
       x: posX,
       y: posY,
       evacuated: false
@@ -629,11 +653,11 @@
       L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(nodesLayer);
     });
 
-    // Desenha os agentes (pessoas evacuando) em tempo real
+    // Desenha os agentes (pessoas evacuando) em tempo real nas ruas do Leaflet
     if (activeTab === 'tab-mapa') {
       agents.forEach(function (ag) {
         if (ag.evacuated) return;
-        var p = xyToLatLng(ag.x, ag.y);
+        var p = (ag.lat !== undefined && ag.lng !== undefined) ? { lat: ag.lat, lng: ag.lng } : xyToLatLng(ag.x, ag.y);
         var icon = L.divIcon({
           className: '',
           html: '<div class="agent"></div>',
@@ -885,6 +909,8 @@
           var nFrom = getNode(ag.path[ag.pathIndex]);
           var nTo   = getNode(ag.path[ag.pathIndex + 1]);
           if (nFrom && nTo) {
+            ag.lat = nFrom.lat + (nTo.lat - nFrom.lat) * ag.segmentProgress;
+            ag.lng = nFrom.lng + (nTo.lng - nFrom.lng) * ag.segmentProgress;
             ag.x = nFrom.x + (nTo.x - nFrom.x) * ag.segmentProgress;
             ag.y = nFrom.y + (nTo.y - nFrom.y) * ag.segmentProgress;
           }
@@ -1044,8 +1070,10 @@
         return;
       }
       totalAgentes += 1;
-      var snap = snapToNearestStreet(x, y);
+      var snap = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
       var newAgent = createAgent(totalAgentes, snap.fromNodeId);
+      newAgent.lat = snap.lat;
+      newAgent.lng = snap.lng;
       newAgent.x = snap.x;
       newAgent.y = snap.y;
       newAgent.segmentProgress = snap.progress;
