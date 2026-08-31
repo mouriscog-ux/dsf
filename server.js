@@ -4,20 +4,20 @@ const path = require('path');
 
 const PORT = process.env.PORT || 8080;
 
-// Graph data of Liberdade neighbourhood for backend API
+// Graph data of Liberdade neighbourhood for backend API (Real Leaflet/OpenStreetMap street coordinates)
 const LIBERDADE_NODES = [
-  { id: 'N1', name: 'Rua Galvão Bueno (Norte)', x: 60, y: 90, type: 'normal' },
-  { id: 'N2', name: 'Cruzamento Galvão x Estudantes', x: 210, y: 95, type: 'normal' },
-  { id: 'N3', name: 'Saída Metrô Liberdade', x: 340, y: 70, type: 'exit' },
-  { id: 'N4', name: 'Viaduto Cidade de Osaka', x: 140, y: 60, type: 'blocked' },
-  { id: 'N5', name: 'Rua dos Estudantes (Oeste)', x: 90, y: 260, type: 'normal' },
-  { id: 'N6', name: 'Cruzamento Estudantes x Américo', x: 200, y: 200, type: 'normal' },
-  { id: 'N7', name: 'Saída Praça da Liberdade', x: 300, y: 180, type: 'exit' },
-  { id: 'N8', name: 'Rua Glória (Sul)', x: 160, y: 230, type: 'normal' },
-  { id: 'N9', name: 'Rua Américo de Campos', x: 270, y: 270, type: 'normal' },
-  { id: 'N10', name: 'Saída Avenida Liberdade', x: 420, y: 130, type: 'exit' },
-  { id: 'N11', name: 'Rua Conselheiro Furtado', x: 380, y: 230, type: 'normal' },
-  { id: 'N12', name: 'Rua São Joaquim', x: 110, y: 340, type: 'normal' }
+  { id: 'N1', name: 'Rua Galvão Bueno (Norte)', lat: -23.5546, lng: -46.6353, x: 60, y: 90, type: 'normal' },
+  { id: 'N2', name: 'Cruzamento Galvão x Estudantes', lat: -23.5558, lng: -46.6349, x: 210, y: 95, type: 'normal' },
+  { id: 'N3', name: 'Saída Metrô Liberdade 🚇', lat: -23.5550, lng: -46.6358, x: 340, y: 70, type: 'exit' },
+  { id: 'N4', name: 'Viaduto Cidade de Osaka 🌉', lat: -23.5552, lng: -46.6351, x: 140, y: 60, type: 'blocked' },
+  { id: 'N5', name: 'Rua dos Estudantes (Oeste)', lat: -23.5560, lng: -46.6362, x: 90, y: 260, type: 'normal' },
+  { id: 'N6', name: 'Cruzamento Estudantes x Américo', lat: -23.5566, lng: -46.6342, x: 200, y: 200, type: 'normal' },
+  { id: 'N7', name: 'Praça da Liberdade 🏙️', lat: -23.5558, lng: -46.6364, x: 300, y: 180, type: 'exit' },
+  { id: 'N8', name: 'Rua da Glória (Sul)', lat: -23.5572, lng: -46.6346, x: 160, y: 230, type: 'normal' },
+  { id: 'N9', name: 'Rua Américo de Campos', lat: -23.5570, lng: -46.6334, x: 270, y: 270, type: 'normal' },
+  { id: 'N10', name: 'Avenida Liberdade 🚦', lat: -23.5582, lng: -46.6366, x: 420, y: 130, type: 'exit' },
+  { id: 'N11', name: 'Rua Conselheiro Furtado', lat: -23.5568, lng: -46.6322, x: 380, y: 230, type: 'normal' },
+  { id: 'N12', name: 'Rua São Joaquim', lat: -23.5586, lng: -46.6352, x: 110, y: 340, type: 'normal' }
 ];
 
 const LIBERDADE_EDGES = [
@@ -38,8 +38,13 @@ const LIBERDADE_EDGES = [
   { from: 'N8', to: 'N12', weight: 120, street: 'R. São Joaquim' }
 ];
 
-// Helper: Euclidean distance heuristic h(n)
+// Helper: Euclidean distance heuristic h(n) using real GPS coordinates
 function heuristicToNode(nodeA, nodeB) {
+  if (nodeA.lat !== undefined && nodeB.lat !== undefined) {
+    const dLat = (nodeA.lat - nodeB.lat) * 111320;
+    const dLng = (nodeA.lng - nodeB.lng) * 111320 * Math.cos(nodeA.lat * Math.PI / 180);
+    return Math.sqrt(dLat * dLat + dLng * dLng);
+  }
   const dx = nodeA.x - nodeB.x;
   const dy = nodeA.y - nodeB.y;
   return Math.sqrt(dx * dx + dy * dy);
