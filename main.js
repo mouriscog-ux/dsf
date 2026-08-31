@@ -377,21 +377,105 @@
   var tickTimer = null;
   var agents = [];
 
-  function createAgent(id, startNodeId) {
-    var normalNodes = nodes.filter(function (n) { return n.type === 'normal'; });
-    if (!startNodeId) {
-      var randNode = normalNodes[Math.floor(Math.random() * normalNodes.length)];
-      startNodeId = randNode ? randNode.id : 'N1';
+  function snapToNearestStreet(x, y) {
+    var minDistance = Infinity;
+    var bestPoint = { x: x, y: y, fromNodeId: 'N1', toNodeId: 'N2', progress: 0 };
+
+    edges.forEach(function (e) {
+      var n1 = getNode(e.from);
+      var n2 = getNode(e.to);
+      if (!n1 || !n2 || n1.type === 'blocked' || n2.type === 'blocked') return;
+
+      var dx = n2.x - n1.x;
+      var dy = n2.y - n1.y;
+      var lenSq = dx * dx + dy * dy;
+      if (lenSq === 0) return;
+
+      var t = Math.max(0, Math.min(1, ((x - n1.x) * dx + (y - n1.y) * dy) / lenSq));
+      var projX = n1.x + t * dx;
+      var projY = n1.y + t * dy;
+      var dist = Math.hypot(x - projX, y - projY);
+
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestPoint = {
+          x: projX,
+          y: projY,
+          fromNodeId: e.from,
+          toNodeId: e.to,
+          progress: t
+        };
+      }
+    });
+
+    return bestPoint;
+  }
+
+  function randomizeExits() {
+    nodes.forEach(function (n) {
+      if (n.type !== 'blocked') n.type = 'normal';
+    });
+
+    var validCandidates = nodes.filter(function (n) { return n.type === 'normal'; });
+    if (validCandidates.length === 0) return;
+
+    for (var i = validCandidates.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var temp = validCandidates[i];
+      validCandidates[i] = validCandidates[j];
+      validCandidates[j] = temp;
     }
-    var res = findPath(startNodeId, true);
+
+    var numExits = Math.min(3, validCandidates.length);
+    for (var k = 0; k < numExits; k++) {
+      validCandidates[k].type = 'exit';
+    }
+
+    addLog('<span class="hl">Saídas de emergência sorteadas aleatoriamente nas ruas</span>');
+  }
+
+  function createAgent(id, startNodeId) {
+    var validEdges = edges.filter(function (e) {
+      var n1 = getNode(e.from);
+      var n2 = getNode(e.to);
+      return n1 && n2 && n1.type !== 'blocked' && n2.type !== 'blocked';
+    });
+
+    if (validEdges.length === 0 || startNodeId) {
+      var normalNodes = nodes.filter(function (n) { return n.type === 'normal'; });
+      var randNode = getNode(startNodeId) || normalNodes[Math.floor(Math.random() * normalNodes.length)] || nodes[0];
+      var startId = randNode ? randNode.id : 'N1';
+      var res0 = findPath(startId, true);
+      return {
+        id: id,
+        currentNodeId: startId,
+        path: res0 ? res0.path : [startId],
+        pathIndex: 0,
+        segmentProgress: 0,
+        x: randNode.x,
+        y: randNode.y,
+        evacuated: false
+      };
+    }
+
+    var randEdge = validEdges[Math.floor(Math.random() * validEdges.length)];
+    var nFrom = getNode(randEdge.from);
+    var nTo = getNode(randEdge.to);
+    var t = Math.random();
+
+    var posX = nFrom.x + (nTo.x - nFrom.x) * t;
+    var posY = nFrom.y + (nTo.y - nFrom.y) * t;
+    var startId = t >= 0.5 ? randEdge.to : randEdge.from;
+    var res = findPath(startId, true);
+
     return {
       id: id,
-      currentNodeId: startNodeId,
-      path: res ? res.path : [startNodeId],
+      currentNodeId: startId,
+      path: res ? res.path : [startId],
       pathIndex: 0,
-      segmentProgress: 0,
-      x: getNode(startNodeId) ? getNode(startNodeId).x : 60,
-      y: getNode(startNodeId) ? getNode(startNodeId).y : 90,
+      segmentProgress: t,
+      x: posX,
+      y: posY,
       evacuated: false
     };
   }
@@ -857,7 +941,7 @@
     btnPausar.textContent = 'Simulação pausada';
   });
 
-  btnReiniciar.addEventListener('click', function () {
+  btnReiniciar.addEventListener('click', async function () {
     stopTimer();
     evacuados = 0;
     elapsedSeconds = 0;
@@ -865,8 +949,9 @@
     edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
     totalAgentes = 50;
 
+    randomizeExits();
     initAgents();
-    recalculateAllAgentPaths();
+    await recalculateAllAgentPathsAsync();
 
     fieldAgentes.textContent = totalAgentes;
     statTotal.textContent = totalAgentes;
@@ -959,14 +1044,16 @@
         return;
       }
       totalAgentes += 1;
-      var newAgent = createAgent(totalAgentes);
-      newAgent.x = x;
-      newAgent.y = y;
+      var snap = snapToNearestStreet(x, y);
+      var newAgent = createAgent(totalAgentes, snap.fromNodeId);
+      newAgent.x = snap.x;
+      newAgent.y = snap.y;
+      newAgent.segmentProgress = snap.progress;
       agents.push(newAgent);
 
       fieldAgentes.textContent = totalAgentes;
       statTotal.textContent = totalAgentes;
-      addLog('Novo agente adicionado ao mapa');
+      addLog('Novo agente posicionado na rua');
       await recalculateAllAgentPathsAsync();
     }
 
@@ -1035,6 +1122,7 @@
     }
 
     applySpeed(1.5);
+    randomizeExits();
     initAgents();
     await recalculateAllAgentPathsAsync();
     setStatus(STATE.STOPPED);
