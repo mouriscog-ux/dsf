@@ -403,6 +403,21 @@
     }
   }
 
+  function getDynamicGraphPayload() {
+    var baseNodeIds = new Set(INITIAL_NODES.map(function (n) { return n.id; }));
+    var baseEdgeKeys = new Set(INITIAL_EDGES.map(function (e) { return e.from + '-' + e.to; }));
+
+    var dynamicNodes = nodes.filter(function (n) { return !baseNodeIds.has(n.id) || n.type === 'blocked'; });
+    var dynamicEdges = edges.filter(function (e) { return !baseEdgeKeys.has(e.from + '-' + e.to); });
+    var blockedIds = nodes.filter(function (n) { return n.type === 'blocked'; }).map(function (n) { return n.id; });
+
+    return {
+      dynamicNodes: dynamicNodes,
+      dynamicEdges: dynamicEdges,
+      blockedIds: blockedIds
+    };
+  }
+
   function recalculateAllAgentPaths() {
     var totalExploredSum = 0;
     var totalCostSum = 0;
@@ -425,6 +440,62 @@
       statNos.textContent = Math.round(totalExploredSum / validCount);
       statCusto.textContent = (totalCostSum / validCount).toFixed(1);
     }
+  }
+
+  async function recalculateAllAgentPathsAsync() {
+    var activeAgents = agents.filter(function (ag) { return !ag.evacuated; });
+    if (activeAgents.length === 0) return;
+
+    var payloadAgents = activeAgents.map(function (ag) {
+      return { id: ag.id, startId: ag.currentNodeId };
+    });
+
+    var dynState = getDynamicGraphPayload();
+
+    try {
+      var response = await fetch('/api/pathfind-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agents: payloadAgents,
+          dynamicNodes: dynState.dynamicNodes,
+          dynamicEdges: dynState.dynamicEdges,
+          blockedIds: dynState.blockedIds,
+          useHeuristic: true
+        })
+      });
+
+      if (response.ok) {
+        var data = await response.json();
+        if (data && data.success && data.results) {
+          var totalExploredSum = 0;
+          var totalCostSum = 0;
+          var validCount = 0;
+
+          activeAgents.forEach(function (ag) {
+            var res = data.results[ag.id];
+            if (res && res.success && res.path && res.path.length > 0) {
+              ag.path = res.path;
+              ag.pathIndex = 0;
+              ag.segmentProgress = 0;
+              totalExploredSum += res.nodesExplored;
+              totalCostSum += res.cost;
+              validCount++;
+            }
+          });
+
+          if (validCount > 0) {
+            statNos.textContent = Math.round(totalExploredSum / validCount);
+            statCusto.textContent = (totalCostSum / validCount).toFixed(1);
+          }
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Backend pathfind-batch indisponível, utilizando fallback local', err);
+    }
+
+    recalculateAllAgentPaths();
   }
 
   /* ---------- 7. DESENHO DO MAPA REAL (LEAFLET) E OVERLAYS ---------- */
@@ -717,65 +788,74 @@
     }
   }
 
-  function tick() {
-    elapsedSeconds += 1;
+  var isTicking = false;
 
-    var stepDelta = 0.25 * speed;
-    agents.forEach(function (ag) {
-      if (ag.evacuated) return;
+  async function tick() {
+    if (isTicking) return;
+    isTicking = true;
 
-      if (!ag.path || ag.path.length <= 1 || ag.pathIndex >= ag.path.length - 1) {
-        var nEvac = getNode(ag.currentNodeId);
-        if (nEvac && nEvac.type === 'exit') {
-          ag.evacuated = true;
-          evacuados++;
-          addLog('<span class="hl">Agente evacuou via ' + nEvac.name + '</span>');
-        } else {
-          var newRes = findPath(ag.currentNodeId, true);
-          if (newRes) {
-            ag.path = newRes.path;
-            ag.pathIndex = 0;
-            ag.segmentProgress = 0;
+    try {
+      elapsedSeconds += 1;
+
+      var stepDelta = 0.25 * speed;
+      agents.forEach(function (ag) {
+        if (ag.evacuated) return;
+
+        if (!ag.path || ag.path.length <= 1 || ag.pathIndex >= ag.path.length - 1) {
+          var nEvac = getNode(ag.currentNodeId);
+          if (nEvac && nEvac.type === 'exit') {
+            ag.evacuated = true;
+            evacuados++;
+            addLog('<span class="hl">Agente evacuou via ' + nEvac.name + '</span>');
+          } else {
+            var newRes = findPath(ag.currentNodeId, true);
+            if (newRes) {
+              ag.path = newRes.path;
+              ag.pathIndex = 0;
+              ag.segmentProgress = 0;
+            }
+          }
+          return;
+        }
+
+        ag.segmentProgress += stepDelta;
+        if (ag.segmentProgress >= 1) {
+          ag.segmentProgress = 0;
+          ag.pathIndex++;
+          ag.currentNodeId = ag.path[ag.pathIndex];
+
+          var currNode = getNode(ag.currentNodeId);
+          if (currNode && currNode.type === 'exit') {
+            ag.evacuated = true;
+            evacuados++;
+            addLog('<span class="hl">Agente evacuou via ' + currNode.name + '</span>');
           }
         }
-        return;
-      }
 
-      ag.segmentProgress += stepDelta;
-      if (ag.segmentProgress >= 1) {
-        ag.segmentProgress = 0;
-        ag.pathIndex++;
-        ag.currentNodeId = ag.path[ag.pathIndex];
-
-        var currNode = getNode(ag.currentNodeId);
-        if (currNode && currNode.type === 'exit') {
-          ag.evacuated = true;
-          evacuados++;
-          addLog('<span class="hl">Agente evacuou via ' + currNode.name + '</span>');
+        if (!ag.evacuated && ag.path && ag.pathIndex < ag.path.length - 1) {
+          var nFrom = getNode(ag.path[ag.pathIndex]);
+          var nTo   = getNode(ag.path[ag.pathIndex + 1]);
+          if (nFrom && nTo) {
+            ag.x = nFrom.x + (nTo.x - nFrom.x) * ag.segmentProgress;
+            ag.y = nFrom.y + (nTo.y - nFrom.y) * ag.segmentProgress;
+          }
         }
+      });
+
+      await recalculateAllAgentPathsAsync();
+
+      if (evacuados >= totalAgentes) {
+        addLog('<span class="hl">Todos os ' + totalAgentes + ' agentes foram evacuados com sucesso!</span>');
+        stopTimer();
+        setStatus(STATE.STOPPED);
       }
 
-      if (!ag.evacuated && ag.path && ag.pathIndex < ag.path.length - 1) {
-        var nFrom = getNode(ag.path[ag.pathIndex]);
-        var nTo   = getNode(ag.path[ag.pathIndex + 1]);
-        if (nFrom && nTo) {
-          ag.x = nFrom.x + (nTo.x - nFrom.x) * ag.segmentProgress;
-          ag.y = nFrom.y + (nTo.y - nFrom.y) * ag.segmentProgress;
-        }
-      }
-    });
-
-    recalculateAllAgentPaths();
-
-    if (evacuados >= totalAgentes) {
-      addLog('<span class="hl">Todos os ' + totalAgentes + ' agentes foram evacuados com sucesso!</span>');
-      stopTimer();
-      setStatus(STATE.STOPPED);
+      updateStatsDisplay();
+      pushChartPoint();
+      renderGraph();
+    } finally {
+      isTicking = false;
     }
-
-    updateStatsDisplay();
-    pushChartPoint();
-    renderGraph();
   }
 
   function startTimer() {
@@ -865,7 +945,7 @@
     });
   });
 
-  leafletMap.on('click', function (evt) {
+  leafletMap.on('click', async function (evt) {
     if (!activeTool) return;
 
     var xy = latLngToXY(evt.latlng.lat, evt.latlng.lng);
@@ -888,7 +968,7 @@
         nodes.push({ id: newId, name: 'Bloqueio (' + Math.round(x) + ',' + Math.round(y) + ')', x: x, y: y, type: 'blocked' });
         addLog('<span class="warn">Novo ponto de risco adicionado</span>');
       }
-      recalculateAllAgentPaths();
+      await recalculateAllAgentPathsAsync();
 
     } else if (activeTool === 'saida') {
       var newExitId = 'NE' + (nodes.length + 1);
@@ -906,7 +986,7 @@
         edges.push({ from: newExitId, to: nearest.id, weight: Math.round(minD), name: 'Acesso Saída' });
       }
       addLog('<span class="hl">Nova saída segura cadastrada</span>');
-      recalculateAllAgentPaths();
+      await recalculateAllAgentPathsAsync();
 
     } else if (activeTool === 'pessoa') {
       if (totalAgentes >= MAX_AGENTES) {
@@ -922,7 +1002,7 @@
       fieldAgentes.textContent = totalAgentes;
       statTotal.textContent = totalAgentes;
       addLog('Novo agente adicionado ao mapa');
-      recalculateAllAgentPaths();
+      await recalculateAllAgentPathsAsync();
     }
 
     renderGraph();
@@ -969,15 +1049,35 @@
   document.addEventListener('mouseup', endDrag);
 
   /* ---------- 13. INICIALIZAÇÃO ---------- */
-  window.addEventListener('resize', function () { leafletMap.invalidateSize(); });
-  setTimeout(function () { leafletMap.invalidateSize(); }, 100);
+  async function initApp() {
+    window.addEventListener('resize', function () { leafletMap.invalidateSize(); });
+    setTimeout(function () { leafletMap.invalidateSize(); }, 100);
 
-  applySpeed(1.5);
-  initAgents();
-  recalculateAllAgentPaths();
-  setStatus(STATE.STOPPED);
-  updateStatsDisplay();
-  pushChartPoint();
-  renderGraph();
+    try {
+      var response = await fetch('/api/graph');
+      if (response.ok) {
+        var data = await response.json();
+        if (data && data.nodes && data.edges) {
+          INITIAL_NODES = data.nodes;
+          INITIAL_EDGES = data.edges;
+          nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
+          edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
+          addLog('Grafo do bairro carregado via API (/api/graph)');
+        }
+      }
+    } catch (e) {
+      console.warn('Usando grafo estático inicial (fallback local)', e);
+    }
+
+    applySpeed(1.5);
+    initAgents();
+    await recalculateAllAgentPathsAsync();
+    setStatus(STATE.STOPPED);
+    updateStatsDisplay();
+    pushChartPoint();
+    renderGraph();
+  }
+
+  initApp();
 
 })();
