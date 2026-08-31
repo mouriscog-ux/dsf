@@ -442,6 +442,13 @@
     }
   }
 
+  function getApiUrl(endpoint) {
+    if (window.location.protocol === 'file:' || (window.location.port && window.location.port !== '8080')) {
+      return 'http://localhost:8080' + endpoint;
+    }
+    return endpoint;
+  }
+
   async function recalculateAllAgentPathsAsync() {
     var activeAgents = agents.filter(function (ag) { return !ag.evacuated; });
     if (activeAgents.length === 0) return;
@@ -453,7 +460,7 @@
     var dynState = getDynamicGraphPayload();
 
     try {
-      var response = await fetch('/api/pathfind-batch', {
+      var response = await fetch(getApiUrl('/api/pathfind-batch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1054,7 +1061,7 @@
     setTimeout(function () { leafletMap.invalidateSize(); }, 100);
 
     try {
-      var response = await fetch('/api/graph');
+      var response = await fetch(getApiUrl('/api/graph'));
       if (response.ok) {
         var data = await response.json();
         if (data && data.nodes && data.edges) {
