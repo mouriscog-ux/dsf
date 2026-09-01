@@ -159,12 +159,28 @@
 
   function xyToLatLng(x, y) {
     var found = getNodeByXY(x, y);
+  
     if (found && found.lat !== undefined && found.lng !== undefined) {
-      return { lat: found.lat, lng: found.lng };
+      return {
+        lat: found.lat,
+        lng: found.lng
+      };
     }
-    var lng = GEO_BOUNDS.west + (x - MODEL_BOUNDS.minX) / (MODEL_BOUNDS.maxX - MODEL_BOUNDS.minX) * (GEO_BOUNDS.east - GEO_BOUNDS.west);
-    var lat = GEO_BOUNDS.north - (y - MODEL_BOUNDS.minY) / (MODEL_BOUNDS.maxY - MODEL_BOUNDS.minY) * (GEO_BOUNDS.north - GEO_BOUNDS.south);
-    return { lat: lat, lng: lng };
+  
+    var lng = GEO_BOUNDS.west +
+      (x - MODEL_BOUNDS.minX) /
+      (MODEL_BOUNDS.maxX - MODEL_BOUNDS.minX) *
+      (GEO_BOUNDS.east - GEO_BOUNDS.west);
+  
+    var lat = GEO_BOUNDS.north -
+      (y - MODEL_BOUNDS.minY) /
+      (MODEL_BOUNDS.maxY - MODEL_BOUNDS.minY) *
+      (GEO_BOUNDS.north - GEO_BOUNDS.south);
+  
+    return {
+      lat: lat,
+      lng: lng
+    };
   }
 
   function latLngToXY(lat, lng) {
@@ -1203,7 +1219,15 @@
     setTimeout(function () { leafletMap.invalidateSize(); }, 100);
 
     try {
-      var response = await fetch(getApiUrl('/api/graph'));
+      var response = await fetch(
+        getApiUrl(
+          '/api/graph' +
+          '?south=' + GEO_BOUNDS.south +
+          '&west=' + GEO_BOUNDS.west +
+          '&north=' + GEO_BOUNDS.north +
+          '&east=' + GEO_BOUNDS.east
+        )
+      );
       if (response.ok) {
         var data = await response.json();
         if (data && data.nodes && data.edges) {
