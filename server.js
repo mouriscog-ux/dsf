@@ -225,6 +225,102 @@ function processOSMData(data) {
     nodes: graph.nodes,
     edges: graph.edges
   };
+}
+
+
+function createGraphFromRoads(roads) {
+  const nodes = [];
+  const edges = [];
+
+  const nodeMap = new Map();
+
+  function getNodeId(lat, lng) {
+    return `node_${lat.toFixed(7)}_${lng.toFixed(7)}`;
+  }
+
+  function getOrCreateNode(lat, lng) {
+    const id = getNodeId(lat, lng);
+
+    if (!nodeMap.has(id)) {
+      const node = {
+        id,
+        lat,
+        lng,
+        type: "road"
+      };
+
+      nodeMap.set(id, node);
+      nodes.push(node);
+    }
+
+    return nodeMap.get(id);
+  }
+
+  function distanceBetween(a, b) {
+    const R = 6371000;
+
+    const lat1 = a.lat * Math.PI / 180;
+    const lat2 = b.lat * Math.PI / 180;
+
+    const dLat = (b.lat - a.lat) * Math.PI / 180;
+    const dLng = (b.lng - a.lng) * Math.PI / 180;
+
+    const h =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1) *
+      Math.cos(lat2) *
+      Math.sin(dLng / 2) ** 2;
+
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+  for (const road of roads) {
+
+    if (!road.geometry || road.geometry.length < 2) {
+      continue;
+    }
+
+    for (let i = 0; i < road.geometry.length - 1; i++) {
+
+      const pointA = road.geometry[i];
+      const pointB = road.geometry[i + 1];
+
+      const nodeA = getOrCreateNode(
+        pointA.lat,
+        pointA.lon
+      );
+
+      const nodeB = getOrCreateNode(
+        pointB.lat,
+        pointB.lon
+      );
+
+      const weight = distanceBetween(
+        nodeA,
+        nodeB
+      );
+
+      edges.push({
+        from: nodeA.id,
+        to: nodeB.id,
+        weight
+      });
+
+      if (road.type !== "motorway") {
+        edges.push({
+          from: nodeB.id,
+          to: nodeA.id,
+          weight
+        });
+      }
+    }
+  }
+
+  return {
+    nodes,
+    edges
+  };
+}
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
