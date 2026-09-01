@@ -4,40 +4,6 @@ const path = require('path');
 
 const PORT = process.env.PORT || 8080;
 
-// Graph data of Liberdade neighbourhood for backend API (Real Leaflet/OpenStreetMap street coordinates)
-const LIBERDADE_NODES = [
-  { id: 'N1', name: 'Rua Galvão Bueno (Norte)', lat: -23.5552, lng: -46.6353, x: 60, y: 90, type: 'normal' },
-  { id: 'N2', name: 'Cruzamento Galvão x Estudantes', lat: -23.5566, lng: -46.6347, x: 210, y: 95, type: 'normal' },
-  { id: 'N3', name: 'Saída Metrô Liberdade 🚇', lat: -23.5553, lng: -46.6357, x: 340, y: 70, type: 'exit' },
-  { id: 'N4', name: 'Viaduto Cidade de Osaka 🌉', lat: -23.5559, lng: -46.6350, x: 140, y: 60, type: 'blocked' },
-  { id: 'N5', name: 'Rua dos Estudantes (Oeste)', lat: -23.5564, lng: -46.6356, x: 90, y: 260, type: 'normal' },
-  { id: 'N6', name: 'Cruzamento Galvão x Américo', lat: -23.5574, lng: -46.6344, x: 200, y: 200, type: 'normal' },
-  { id: 'N7', name: 'Praça da Liberdade 🏙️', lat: -23.5557, lng: -46.6360, x: 300, y: 180, type: 'exit' },
-  { id: 'N8', name: 'Rua da Glória (Sul)', lat: -23.5573, lng: -46.6343, x: 160, y: 230, type: 'normal' },
-  { id: 'N9', name: 'Rua Américo de Campos', lat: -23.5575, lng: -46.6335, x: 270, y: 270, type: 'normal' },
-  { id: 'N10', name: 'Avenida Liberdade 🚦', lat: -23.5574, lng: -46.6362, x: 420, y: 130, type: 'exit' },
-  { id: 'N11', name: 'Rua Conselheiro Furtado', lat: -23.5571, lng: -46.6325, x: 380, y: 230, type: 'normal' },
-  { id: 'N12', name: 'Rua São Joaquim', lat: -23.5587, lng: -46.6341, x: 110, y: 340, type: 'normal' }
-];
-
-const LIBERDADE_EDGES = [
-  { from: 'N1', to: 'N4', weight: 80, street: 'R. Galvão Bueno' },
-  { from: 'N4', to: 'N2', weight: 75, street: 'R. Galvão Bueno' },
-  { from: 'N2', to: 'N3', weight: 130, street: 'Praça da Liberdade' },
-  { from: 'N1', to: 'N5', weight: 170, street: 'R. Tomás de Lima' },
-  { from: 'N5', to: 'N8', weight: 75, street: 'R. dos Estudantes' },
-  { from: 'N8', to: 'N6', weight: 50, street: 'R. dos Estudantes' },
-  { from: 'N6', to: 'N7', weight: 100, street: 'R. Américo de Campos' },
-  { from: 'N2', to: 'N6', weight: 105, street: 'R. Galvão Bueno' },
-  { from: 'N6', to: 'N9', weight: 90, street: 'R. Américo de Campos' },
-  { from: 'N9', to: 'N7', weight: 95, street: 'R. da Glória' },
-  { from: 'N3', to: 'N10', weight: 100, street: 'Av. Liberdade' },
-  { from: 'N7', to: 'N10', weight: 130, street: 'Av. Liberdade' },
-  { from: 'N7', to: 'N11', weight: 95, street: 'R. Cons. Furtado' },
-  { from: 'N5', to: 'N12', weight: 85, street: 'R. São Joaquim' },
-  { from: 'N8', to: 'N12', weight: 120, street: 'R. São Joaquim' }
-];
-
 // Helper: Euclidean distance heuristic h(n) using real GPS coordinates
 function heuristicToNode(nodeA, nodeB) {
   if (nodeA.lat !== undefined && nodeB.lat !== undefined) {
@@ -66,7 +32,6 @@ function calculateHeuristic(node, exitNodes, goalNode, useHeuristic) {
 // Build adjacency graph merging static and dynamic nodes/edges
 function buildGraph(dynamicNodes = [], dynamicEdges = [], blockedIds = []) {
   const nodesMap = new Map();
-  LIBERDADE_NODES.forEach(n => nodesMap.set(n.id, { ...n }));
   if (Array.isArray(dynamicNodes)) {
     dynamicNodes.forEach(n => {
       if (n && n.id) nodesMap.set(n.id, { ...n });
@@ -80,7 +45,7 @@ function buildGraph(dynamicNodes = [], dynamicEdges = [], blockedIds = []) {
   const adj = new Map();
   allNodes.forEach(n => adj.set(n.id, []));
 
-  const allEdges = [...LIBERDADE_EDGES, ...(Array.isArray(dynamicEdges) ? dynamicEdges : [])];
+  const allEdges = Array.isArray(dynamicEdges) ? dynamicEdges : [];
   allEdges.forEach(e => {
     if (!e || !e.from || !e.to) return;
     if (blockedSet.has(e.from) || blockedSet.has(e.to)) return;
@@ -201,6 +166,64 @@ function runPathfinding(startId, goalId = null, blockedIds = [], useHeuristic = 
   const graph = buildGraph(dynamicNodes, dynamicEdges, blockedIds);
   return runPathfindingOnGraph(graph, startId, goalId, useHeuristic, blockedIds);
 }
+async function fetchOSMData(south, west, north, east) {
+  const query = `
+    [out:json];
+
+    (
+      way["highway"](${south},${west},${north},${east});
+      way["building"](${south},${west},${north},${east});
+    );
+
+    out geom;
+  `;
+
+  const response = await fetch(
+    "https://overpass-api.de/api/interpreter",
+    {
+      method: "POST",
+      body: query
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Overpass API error: ${response.status}`);
+  }
+
+  return await response.json();
+}
+function processOSMData(data) {
+  const roads = [];
+  const buildings = [];
+
+  for (const element of data.elements || []) {
+
+    if (element.tags?.highway && element.geometry) {
+      roads.push({
+        id: `road_${element.id}`,
+        type: element.tags.highway,
+        name: element.tags.name || "Sem nome",
+        geometry: element.geometry
+      });
+    }
+
+    if (element.tags?.building && element.geometry) {
+      buildings.push({
+        id: `building_${element.id}`,
+        type: element.tags.building,
+        geometry: element.geometry
+      });
+    }
+  }
+
+  const graph = createGraphFromRoads(roads);
+
+  return {
+    roads,
+    buildings,
+    nodes: graph.nodes,
+    edges: graph.edges
+  };
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -212,7 +235,7 @@ const MIME_TYPES = {
   '.svg': 'image/svg+xml'
 };
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
 
   // CORS Headers
@@ -228,8 +251,162 @@ const server = http.createServer((req, res) => {
 
   // API Endpoints
   if (parsedUrl.pathname === '/api/graph' && req.method === 'GET') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ nodes: LIBERDADE_NODES, edges: LIBERDADE_EDGES }));
+    try {
+  
+      const south = parseFloat(
+        parsedUrl.searchParams.get('south')
+      );
+  
+      const west = parseFloat(
+        parsedUrl.searchParams.get('west')
+      );
+  
+      const north = parseFloat(
+        parsedUrl.searchParams.get('north')
+      );
+  
+      const east = parseFloat(
+        parsedUrl.searchParams.get('east')
+      );
+  
+      if (
+        !Number.isFinite(south) ||
+        !Number.isFinite(west) ||
+        !Number.isFinite(north) ||
+        !Number.isFinite(east)
+      ) {
+        res.writeHead(400, {
+          'Content-Type': 'application/json'
+        });
+  
+        res.end(JSON.stringify({
+          error: 'Bounding box inválido'
+        }));
+  
+        return;
+      }
+  
+      const osmData = await fetchOSMData(
+        south,
+        west,
+        north,
+        east
+      );
+  
+      const mapData = processOSMData(osmData);
+      function createGraphFromRoads(roads) {
+        const nodes = [];
+        const edges = [];
+      
+        const nodeMap = new Map();
+      
+        function getNodeId(lat, lng) {
+          return `node_${lat.toFixed(7)}_${lng.toFixed(7)}`;
+        }
+      
+        function getOrCreateNode(lat, lng) {
+          const id = getNodeId(lat, lng);
+      
+          if (!nodeMap.has(id)) {
+            const node = {
+              id,
+              lat,
+              lng,
+              type: "road"
+            };
+      
+            nodeMap.set(id, node);
+            nodes.push(node);
+          }
+      
+          return nodeMap.get(id);
+        }
+      
+        function distanceBetween(a, b) {
+          const R = 6371000;
+      
+          const lat1 = a.lat * Math.PI / 180;
+          const lat2 = b.lat * Math.PI / 180;
+      
+          const dLat = (b.lat - a.lat) * Math.PI / 180;
+          const dLng = (b.lng - a.lng) * Math.PI / 180;
+      
+          const h =
+            Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1) *
+            Math.cos(lat2) *
+            Math.sin(dLng / 2) ** 2;
+      
+          return 2 * R * Math.asin(Math.sqrt(h));
+        }
+      
+        for (const road of roads) {
+      
+          if (!road.geometry || road.geometry.length < 2) {
+            continue;
+          }
+      
+          for (let i = 0; i < road.geometry.length - 1; i++) {
+      
+            const pointA = road.geometry[i];
+            const pointB = road.geometry[i + 1];
+      
+            const nodeA = getOrCreateNode(
+              pointA.lat,
+              pointA.lon
+            );
+      
+            const nodeB = getOrCreateNode(
+              pointB.lat,
+              pointB.lon
+            );
+      
+            const weight = distanceBetween(
+              nodeA,
+              nodeB
+            );
+      
+            edges.push({
+              from: nodeA.id,
+              to: nodeB.id,
+              weight
+            });
+      
+            if (road.type !== "motorway") {
+              edges.push({
+                from: nodeB.id,
+                to: nodeA.id,
+                weight
+              });
+            }
+          }
+        }
+      
+        return {
+          nodes,
+          edges
+        };
+      }
+      res.writeHead(200, {
+        'Content-Type': 'application/json'
+      });
+  
+      res.end(JSON.stringify(mapData));
+  
+    } catch (error) {
+  
+      console.error('Erro ao consultar OSM:', error);
+  
+      res.writeHead(500, {
+        'Content-Type': 'application/json'
+      });
+  
+      res.end(JSON.stringify({
+        error: 'Erro ao consultar OpenStreetMap',
+        message: error.message
+      }));
+    }
+  
     return;
   }
 
@@ -352,3 +529,4 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`[SmartEvac] Servidor rodando em http://localhost:${PORT}`);
 });
+}
