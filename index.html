@@ -6,6 +6,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Anta&family=Bowlby+One+SC&family=Luckiest+Guy&family=Space+Grotesk:wght@300..700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <link href="style.css" rel="stylesheet">
 </head>
 <body>
@@ -13,23 +14,23 @@
 <!-- HERO SPLASH MODAL (URBANISA TECH) -->
 <div class="urbanisa-overlay" id="urbanisa-modal">
   <div class="urbanisa-hero">
-    <div class="urbanisa-badge">🏆 FEIRA DE CIÊNCIAS 2026</div>
+    <div class="urbanisa-badge">🏆 FECART 2026</div>
     <h1 class="urbanisa-title">URBANISA <span class="cyan">TECH</span></h1>
     <p class="urbanisa-subtitle">SmartEvac — Simulação Inteligente de Evacuação Urbana no Bairro da Liberdade</p>
 
     <div class="urbanisa-pills">
-      <span class="pill">🏮 Bairro da Liberdade</span>
-      <span class="pill">🧠 Algoritmo A*</span>
-      <span class="pill">⚡ Comparativo Dijkstra</span>
-      <span class="pill">🔥 Obstáculos em Tempo Real</span>
+      <span class="pill"> Bairro da Liberdade</span>
+      <span class="pill"> Algoritmo A*</span>
+      <span class="pill"> Comparativo Dijkstra</span>
+      <span class="pill"> Obstáculos em Tempo Real</span>
     </div>
 
     <div class="urbanisa-actions">
       <button class="btn-start-hero" id="btn-start-hero">
-        <span class="icon">🚀</span> COMEÇAR SIMULAÇÃO
+        <span class="icon"></span> COMEÇAR SIMULAÇÃO
       </button>
       <button class="btn-tutorial-hero" id="btn-tutorial-hero">
-        <span class="icon">📖</span> TUTORIAL DA FEIRA
+        <span class="icon">📖</span> TUTORIAL do simulador
       </button>
     </div>
 
@@ -55,7 +56,7 @@
         <p>
           O simulador representa a malha viária real do <strong>Bairro da Liberdade (São Paulo)</strong>. Cada cruzamento
           é um <em>nó</em> e cada rua é uma <em>aresta ponderada pela distância</em>. As saídas seguras representam
-          pontos como a <strong>Estação Metrô Liberdade</strong> 🚇 e a <strong>Praça da Liberdade</strong> 🏙️.
+          pontos como a <strong>Estação Metrô Liberdade</strong>  e a <strong>Praça da Liberdade</strong>.
         </p>
         <div class="slide-visual">
           <span class="swatch safe"></span> Saída Segura &nbsp;&nbsp;
@@ -126,7 +127,7 @@
         <div class="brand-mark"></div>
         <div class="brand-text">
           <div class="name">URBANISA <span class="cyan">TECH</span></div>
-          <div class="sub">SmartEvac · Bairro da Liberdade · Feira de Ciências</div>
+          <div class="sub">SmartEvac · Bairro da Liberdade · FECART</div>
         </div>
       </div>
       <div class="botao">
@@ -158,6 +159,7 @@
           <div class="slider-track" id="speed-track"><div class="slider-fill" id="speed-fill"></div><div class="slider-thumb" id="speed-thumb"></div></div>
         </div>
 
+<<<<<<< HEAD
         <div class="slider-row fire-control">
           <div class="slider-label"><span>Intensidade do Fogo</span><span id="fire-intensity-label">2.0×</span></div>
           <input class="range-control" id="fire-intensity" type="range" min="1" max="5" step="0.5" value="2">
@@ -169,6 +171,9 @@
         </div>
 
         <div class="panel-title spaced">Ferramentas da Feira</div>
+=======
+        <div class="panel-title spaced">Ferramentas de simulação</div>
+>>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
         <div class="tool-btn" data-tool="bloqueio"><span class="ic danger">🔥</span> Adicionar bloqueio</div>
         <div class="tool-btn" data-tool="saida"><span class="ic safe">🚪</span> Marcar saída segura</div>
         <div class="tool-btn" data-tool="pessoa"><span class="ic amber">🧍</span> Adicionar pessoa</div>
@@ -184,15 +189,11 @@
         </div>
 
         <div class="map-canvas" id="map-canvas">
+          <!-- MAPA REAL DO BAIRRO DA LIBERDADE (OpenStreetMap via Leaflet) -->
+          <div id="leaflet-map"></div>
+
+          <!-- HUD sutil sobre o mapa real -->
           <div class="grid-lines"></div>
-
-          <!-- CAMADA SVG DE RUAS E BLOCOS URBANOS REALISTAS -->
-          <svg class="path-svg" id="path-svg"></svg>
-
-          <!-- CONTAINERS DINÂMICOS -->
-          <div id="nodes-container"></div>
-          <div id="agents-container"></div>
-          <div id="tags-container"></div>
 
           <div id="overlay-container" class="overlay-container"></div>
         </div>
@@ -255,7 +256,7 @@
     </div>
 
     <div class="footnote">
-      URBANISA TECH — SmartEvac · Protótipo acadêmico para a Feira de Ciências · Bairro da Liberdade, São Paulo
+      URBANISA TECH — SmartEvac · Protótipo acadêmico para a FECART 2026 · Bairro da Liberdade, São Paulo
     </div>
   </section>
 
@@ -336,6 +337,7 @@
   </section>
 </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="main.js"></script>
 </body>
 </html>

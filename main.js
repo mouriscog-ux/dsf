@@ -39,6 +39,7 @@
   btnStartHero.addEventListener('click', function () {
     urbanisaModal.style.display = 'none';
     addLog('URBANISA TECH — Simulação iniciada pela tela de apresentação');
+    setTimeout(function () { leafletMap.invalidateSize(); }, 50);
   });
 
   btnTutorialHero.addEventListener('click', function () {
@@ -80,6 +81,10 @@
       btn.classList.add('active');
       var viewEl = document.getElementById(btn.dataset.view);
       if (viewEl) viewEl.classList.add('active');
+
+      if (btn.dataset.view === 'view-simulacao') {
+        setTimeout(function () { leafletMap.invalidateSize(); }, 0);
+      }
     });
   });
 
@@ -102,10 +107,6 @@
 
   var logList          = document.getElementById('log-list');
   var mapCanvas        = document.getElementById('map-canvas');
-  var pathSvg          = document.getElementById('path-svg');
-  var nodesContainer   = document.getElementById('nodes-container');
-  var agentsContainer  = document.getElementById('agents-container');
-  var tagsContainer    = document.getElementById('tags-container');
   var overlayContainer = document.getElementById('overlay-container');
   var mapToolbar       = document.getElementById('map-toolbar');
 
@@ -147,20 +148,95 @@
     });
   }
 
+  /* ---------- 3.5 MAPA REAL — LEAFLET + OPENSTREETMAP ---------- */
+  // O grafo do simulador vive num espaço "modelo" abstrato (x,y em metros aproximados).
+  // Aqui definimos a correspondência entre esse espaço abstrato e a área geográfica
+  // real do Bairro da Liberdade (SP), para desenhar tudo em cima do mapa de verdade.
+  var MODEL_BOUNDS = { minX: 40, maxX: 440, minY: 40, maxY: 360 };
+  var GEO_BOUNDS = { south: -23.5650, north: -23.5530, west: -46.6420, east: -46.6280 };
+
+  function getNodeByXY(x, y) {
+    if (!nodes) return null;
+    for (var i = 0; i < nodes.length; i++) {
+      if (Math.abs(nodes[i].x - x) < 0.1 && Math.abs(nodes[i].y - y) < 0.1) return nodes[i];
+    }
+    return null;
+  }
+
+  function xyToLatLng(x, y) {
+    var found = getNodeByXY(x, y);
+  
+    if (found && found.lat !== undefined && found.lng !== undefined) {
+      return {
+        lat: found.lat,
+        lng: found.lng
+      };
+    }
+  
+    var lng = GEO_BOUNDS.west +
+      (x - MODEL_BOUNDS.minX) /
+      (MODEL_BOUNDS.maxX - MODEL_BOUNDS.minX) *
+      (GEO_BOUNDS.east - GEO_BOUNDS.west);
+  
+    var lat = GEO_BOUNDS.north -
+      (y - MODEL_BOUNDS.minY) /
+      (MODEL_BOUNDS.maxY - MODEL_BOUNDS.minY) *
+      (GEO_BOUNDS.north - GEO_BOUNDS.south);
+  
+    return {
+      lat: lat,
+      lng: lng
+    };
+  }
+
+  function latLngToXY(lat, lng) {
+    var x = MODEL_BOUNDS.minX + (lng - GEO_BOUNDS.west) / (GEO_BOUNDS.east - GEO_BOUNDS.west) * (MODEL_BOUNDS.maxX - MODEL_BOUNDS.minX);
+    var y = MODEL_BOUNDS.minY + (GEO_BOUNDS.north - lat) / (GEO_BOUNDS.north - GEO_BOUNDS.south) * (MODEL_BOUNDS.maxY - MODEL_BOUNDS.minY);
+    return { x: x, y: y };
+  }
+
+  // "Efeito parede": o usuário pode navegar dentro da Liberdade, mas não sai da área
+  var WALL_BOUNDS = L.latLngBounds(
+    L.latLng(GEO_BOUNDS.south - 0.0025, GEO_BOUNDS.west - 0.0025),
+    L.latLng(GEO_BOUNDS.north + 0.0025, GEO_BOUNDS.east + 0.0025)
+  );
+
+  var leafletMap = L.map('leaflet-map', {
+    center: [(GEO_BOUNDS.north + GEO_BOUNDS.south) / 2, (GEO_BOUNDS.west + GEO_BOUNDS.east) / 2],
+    zoom: 16,
+    minZoom: 15,
+    maxZoom: 19,
+    maxBounds: WALL_BOUNDS,
+    maxBoundsViscosity: 1.0
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(leafletMap);
+
+  // Camadas redesenhadas a cada frame da simulação
+  var streetsLayer  = L.layerGroup().addTo(leafletMap); // arestas do grafo (ruas)
+  var nodesLayer     = L.layerGroup().addTo(leafletMap); // cruzamentos / saídas / bloqueios
+  var routesLayer    = L.layerGroup().addTo(leafletMap); // rotas calculadas pelo A*
+  var agentsLayer    = L.layerGroup().addTo(leafletMap); // pessoas em evacuação
+  var costTagsLayer  = L.layerGroup().addTo(leafletMap); // rótulos f(n)/g(n)/h(n)
+  var landmarksLayer = L.layerGroup().addTo(leafletMap); // marcos turísticos (estáticos)
+
   /* ---------- 4. GRAFO REALISTA DO BAIRRO DA LIBERDADE ---------- */
   var INITIAL_NODES = [
-    { id: 'N1', name: 'R. Galvão Bueno (Norte)', x: 60, y: 90, type: 'normal' },
-    { id: 'N2', name: 'Cruzamento Galvão x Estudantes', x: 210, y: 95, type: 'normal' },
-    { id: 'N3', name: 'Estação Metrô Liberdade 🚇', x: 340, y: 70, type: 'exit' },
-    { id: 'N4', name: 'Viaduto Cidade de Osaka 🌉', x: 140, y: 60, type: 'blocked' },
-    { id: 'N5', name: 'R. dos Estudantes (Oeste)', x: 90, y: 260, type: 'normal' },
-    { id: 'N6', name: 'Cruzamento Estudantes x Américo', x: 200, y: 200, type: 'normal' },
-    { id: 'N7', name: 'Praça da Liberdade 🏙️', x: 300, y: 180, type: 'exit' },
-    { id: 'N8', name: 'Rua da Glória (Sul)', x: 160, y: 230, type: 'normal' },
-    { id: 'N9', name: 'Rua Américo de Campos', x: 270, y: 270, type: 'normal' },
-    { id: 'N10', name: 'Avenida Liberdade 🚦', x: 420, y: 130, type: 'exit' },
-    { id: 'N11', name: 'Rua Conselheiro Furtado', x: 380, y: 230, type: 'normal' },
-    { id: 'N12', name: 'Rua São Joaquim', x: 110, y: 340, type: 'normal' }
+    { id: 'N1', name: 'R. Galvão Bueno (Norte)', lat: -23.5552, lng: -46.6353, x: 60, y: 90, type: 'normal' },
+    { id: 'N2', name: 'Cruzamento Galvão x Estudantes', lat: -23.5566, lng: -46.6347, x: 210, y: 95, type: 'normal' },
+    { id: 'N3', name: 'Estação Metrô Liberdade 🚇', lat: -23.5553, lng: -46.6357, x: 340, y: 70, type: 'exit' },
+    { id: 'N4', name: 'Viaduto Cidade de Osaka 🌉', lat: -23.5559, lng: -46.6350, x: 140, y: 60, type: 'blocked' },
+    { id: 'N5', name: 'Rua dos Estudantes (Oeste)', lat: -23.5564, lng: -46.6356, x: 90, y: 260, type: 'normal' },
+    { id: 'N6', name: 'Cruzamento Galvão x Américo', lat: -23.5574, lng: -46.6344, x: 200, y: 200, type: 'normal' },
+    { id: 'N7', name: 'Praça da Liberdade 🏙️', lat: -23.5557, lng: -46.6360, x: 300, y: 180, type: 'exit' },
+    { id: 'N8', name: 'Rua da Glória (Sul)', lat: -23.5573, lng: -46.6343, x: 160, y: 230, type: 'normal' },
+    { id: 'N9', name: 'Rua Américo de Campos', lat: -23.5575, lng: -46.6335, x: 270, y: 270, type: 'normal' },
+    { id: 'N10', name: 'Avenida Liberdade 🚦', lat: -23.5574, lng: -46.6362, x: 420, y: 130, type: 'exit' },
+    { id: 'N11', name: 'Rua Conselheiro Furtado', lat: -23.5571, lng: -46.6325, x: 380, y: 230, type: 'normal' },
+    { id: 'N12', name: 'Rua São Joaquim', lat: -23.5587, lng: -46.6341, x: 110, y: 340, type: 'normal' }
   ];
 
   var INITIAL_EDGES = [
@@ -192,6 +268,17 @@
   var edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
   var activeFires = [];
   var lastFireComparison = null;
+
+  // Marcos turísticos não mudam de posição — desenhamos uma única vez sobre o mapa real
+  LANDMARKS.forEach(function (lm) {
+    var p = xyToLatLng(lm.x, lm.y);
+    var icon = L.divIcon({
+      className: '',
+      html: '<div class="landmark-badge">' + lm.text + '</div>',
+      iconSize: null
+    });
+    L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(landmarksLayer);
+  });
 
   function getNode(id) {
     for (var i = 0; i < nodes.length; i++) {
@@ -243,6 +330,11 @@
   }
 
   function distance(nodeA, nodeB) {
+    if (nodeA.lat !== undefined && nodeB.lat !== undefined) {
+      var dLat = (nodeA.lat - nodeB.lat) * 111320;
+      var dLng = (nodeA.lng - nodeB.lng) * 111320 * Math.cos(nodeA.lat * Math.PI / 180);
+      return Math.sqrt(dLat * dLat + dLng * dLng);
+    }
     var dx = nodeA.x - nodeB.x;
     var dy = nodeA.y - nodeB.y;
     return Math.sqrt(dx * dx + dy * dy);
@@ -354,6 +446,7 @@
   var tickTimer = null;
   var agents = [];
 
+<<<<<<< HEAD
   function measurePath(startId, useHeuristic) {
     var t0 = performance.now();
     var res = findPath(startId, useHeuristic);
@@ -382,16 +475,119 @@
     if (!startNodeId) {
       var randNode = normalNodes[Math.floor(Math.random() * normalNodes.length)];
       startNodeId = randNode ? randNode.id : 'N1';
+=======
+  function snapToNearestStreet(lat, lng) {
+    var minDistance = Infinity;
+    var bestPoint = { lat: lat, lng: lng, x: 0, y: 0, fromNodeId: 'N1', toNodeId: 'N2', progress: 0 };
+
+    edges.forEach(function (e) {
+      var n1 = getNode(e.from);
+      var n2 = getNode(e.to);
+      if (!n1 || !n2 || n1.type === 'blocked' || n2.type === 'blocked') return;
+
+      var n1Lat = n1.lat !== undefined ? n1.lat : xyToLatLng(n1.x, n1.y).lat;
+      var n1Lng = n1.lng !== undefined ? n1.lng : xyToLatLng(n1.x, n1.y).lng;
+      var n2Lat = n2.lat !== undefined ? n2.lat : xyToLatLng(n2.x, n2.y).lat;
+      var n2Lng = n2.lng !== undefined ? n2.lng : xyToLatLng(n2.x, n2.y).lng;
+
+      var dLat = n2Lat - n1Lat;
+      var dLng = n2Lng - n1Lng;
+      var lenSq = dLat * dLat + dLng * dLng;
+      if (lenSq === 0) return;
+
+      var t = Math.max(0, Math.min(1, ((lat - n1Lat) * dLat + (lng - n1Lng) * dLng) / lenSq));
+      var projLat = n1Lat + t * dLat;
+      var projLng = n1Lng + t * dLng;
+      var dist = Math.hypot(lat - projLat, lng - projLng);
+
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestPoint = {
+          lat: projLat,
+          lng: projLng,
+          x: n1.x + t * (n2.x - n1.x),
+          y: n1.y + t * (n2.y - n1.y),
+          fromNodeId: e.from,
+          toNodeId: e.to,
+          progress: t
+        };
+      }
+    });
+
+    return bestPoint;
+  }
+
+  function randomizeExits() {
+    nodes.forEach(function (n) {
+      if (n.type !== 'blocked') n.type = 'normal';
+    });
+
+    var validCandidates = nodes.filter(function (n) { return n.type === 'normal'; });
+    if (validCandidates.length === 0) return;
+
+    for (var i = validCandidates.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var temp = validCandidates[i];
+      validCandidates[i] = validCandidates[j];
+      validCandidates[j] = temp;
+>>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
     }
-    var res = findPath(startNodeId, true);
+
+    var numExits = Math.min(3, validCandidates.length);
+    for (var k = 0; k < numExits; k++) {
+      validCandidates[k].type = 'exit';
+    }
+
+    addLog('<span class="hl">Saídas de emergência sorteadas aleatoriamente nas ruas</span>');
+  }
+
+  function createAgent(id, startNodeId) {
+    var validEdges = edges.filter(function (e) {
+      var n1 = getNode(e.from);
+      var n2 = getNode(e.to);
+      return n1 && n2 && n1.type !== 'blocked' && n2.type !== 'blocked';
+    });
+
+    if (validEdges.length === 0 || startNodeId) {
+      var normalNodes = nodes.filter(function (n) { return n.type === 'normal'; });
+      var randNode = getNode(startNodeId) || normalNodes[Math.floor(Math.random() * normalNodes.length)] || nodes[0];
+      var startId = randNode ? randNode.id : 'N1';
+      var res0 = findPath(startId, true);
+      return {
+        id: id,
+        currentNodeId: startId,
+        path: res0 ? res0.path : [startId],
+        pathIndex: 0,
+        segmentProgress: 0,
+        x: randNode.x,
+        y: randNode.y,
+        evacuated: false
+      };
+    }
+
+    var randEdge = validEdges[Math.floor(Math.random() * validEdges.length)];
+    var nFrom = getNode(randEdge.from);
+    var nTo = getNode(randEdge.to);
+    var t = Math.random();
+
+    var posLat = nFrom.lat + (nTo.lat - nFrom.lat) * t;
+    var posLng = nFrom.lng + (nTo.lng - nFrom.lng) * t;
+    var posX = nFrom.x + (nTo.x - nFrom.x) * t;
+    var posY = nFrom.y + (nTo.y - nFrom.y) * t;
+
+    var startId = t >= 0.5 ? randEdge.to : randEdge.from;
+    var res = findPath(startId, true);
+
     return {
       id: id,
-      currentNodeId: startNodeId,
-      path: res ? res.path : [startNodeId],
+      currentNodeId: startId,
+      path: res ? res.path : [startId],
       pathIndex: 0,
-      segmentProgress: 0,
-      x: getNode(startNodeId) ? getNode(startNodeId).x : 60,
-      y: getNode(startNodeId) ? getNode(startNodeId).y : 90,
+      segmentProgress: t,
+      lat: posLat,
+      lng: posLng,
+      x: posX,
+      y: posY,
       evacuated: false
     };
   }
@@ -401,6 +597,21 @@
     for (var i = 1; i <= totalAgentes; i++) {
       agents.push(createAgent(i));
     }
+  }
+
+  function getDynamicGraphPayload() {
+    var baseNodeIds = new Set(INITIAL_NODES.map(function (n) { return n.id; }));
+    var baseEdgeKeys = new Set(INITIAL_EDGES.map(function (e) { return e.from + '-' + e.to; }));
+
+    var dynamicNodes = nodes.filter(function (n) { return !baseNodeIds.has(n.id) || n.type === 'blocked'; });
+    var dynamicEdges = edges.filter(function (e) { return !baseEdgeKeys.has(e.from + '-' + e.to); });
+    var blockedIds = nodes.filter(function (n) { return n.type === 'blocked'; }).map(function (n) { return n.id; });
+
+    return {
+      dynamicNodes: dynamicNodes,
+      dynamicEdges: dynamicEdges,
+      blockedIds: blockedIds
+    };
   }
 
   function recalculateAllAgentPaths() {
@@ -434,103 +645,128 @@
     recalculateAllAgentPaths();
   }
 
-  /* ---------- 7. DESENHO DO MAPA REALISTA E OVERLAYS ---------- */
-  function renderGraph() {
-    var svgContent = '';
+  function getApiUrl(endpoint) {
+    if (window.location.protocol === 'file:' || (window.location.port && window.location.port !== '8080')) {
+      return 'http://localhost:8080' + endpoint;
+    }
+    return endpoint;
+  }
 
-    // Desenha quarteirões urbanos (polígonos de prédios da Liberdade)
-    svgContent += '<polygon points="70,100 190,105 150,220 70,220" fill="rgba(30, 41, 59, 0.45)" stroke="rgba(51, 65, 85, 0.6)" stroke-width="1.5"/>';
-    svgContent += '<polygon points="220,105 320,80 280,170 210,190" fill="rgba(30, 41, 59, 0.45)" stroke="rgba(51, 65, 85, 0.6)" stroke-width="1.5"/>';
-    svgContent += '<polygon points="100,270 190,210 260,270 120,330" fill="rgba(30, 41, 59, 0.45)" stroke="rgba(51, 65, 85, 0.6)" stroke-width="1.5"/>';
+  async function recalculateAllAgentPathsAsync() {
+    var activeAgents = agents.filter(function (ag) { return !ag.evacuated; });
+    if (activeAgents.length === 0) return;
 
-    // Desenha trechos de ruas (arestas)
-    edges.forEach(function (e) {
-      var n1 = getNode(e.from);
-      var n2 = getNode(e.to);
-      if (!n1 || !n2) return;
-      var isBlockedEdge = n1.type === 'blocked' || n2.type === 'blocked';
-      var strokeColor = isBlockedEdge ? 'var(--danger)' : '#334155';
-      var dashArray = isBlockedEdge ? '4 4' : 'none';
-
-      svgContent += '<line x1="' + n1.x + '" y1="' + n1.y + '" x2="' + n2.x + '" y2="' + n2.y + '" ' +
-        'stroke="' + strokeColor + '" stroke-width="4" stroke-linecap="round" stroke-dasharray="' + dashArray + '" opacity="0.9"/>';
+    var payloadAgents = activeAgents.map(function (ag) {
+      return { id: ag.id, startId: ag.currentNodeId };
     });
 
-    // Se estiver na aba mapa, desenha rotas do A* dos agentes em verde emerald
-    if (activeTab === 'tab-mapa') {
-      var samplePaths = [];
-      agents.forEach(function (ag) {
-        if (!ag.evacuated && ag.path && ag.path.length > 1 && samplePaths.length < 4) {
-          samplePaths.push(ag.path);
-        }
+    var dynState = getDynamicGraphPayload();
+
+    try {
+      var response = await fetch(getApiUrl('/api/pathfind-batch'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agents: payloadAgents,
+          dynamicNodes: dynState.dynamicNodes,
+          dynamicEdges: dynState.dynamicEdges,
+          blockedIds: dynState.blockedIds,
+          useHeuristic: true
+        })
       });
-      samplePaths.forEach(function (pth) {
-        var dStr = '';
-        for (var i = 0; i < pth.length; i++) {
-          var n = getNode(pth[i]);
-          if (n) dStr += (i === 0 ? 'M ' : ' L ') + n.x + ' ' + n.y;
+
+      if (response.ok) {
+        var data = await response.json();
+        if (data && data.success && data.results) {
+          var totalExploredSum = 0;
+          var totalCostSum = 0;
+          var validCount = 0;
+
+          activeAgents.forEach(function (ag) {
+            var res = data.results[ag.id];
+            if (res && res.success && res.path && res.path.length > 0) {
+              ag.path = res.path;
+              ag.pathIndex = 0;
+              ag.segmentProgress = 0;
+              totalExploredSum += res.nodesExplored;
+              totalCostSum += res.cost;
+              validCount++;
+            }
+          });
+
+          if (validCount > 0) {
+            statNos.textContent = Math.round(totalExploredSum / validCount);
+            statCusto.textContent = (totalCostSum / validCount).toFixed(1);
+          }
+          return;
         }
-        svgContent += '<path d="' + dStr + '" stroke="var(--safe)" stroke-width="3" fill="none" stroke-dasharray="7 5" opacity="0.9"/>';
-      });
+      }
+    } catch (err) {
+      console.warn('Backend pathfind-batch indisponível, utilizando fallback local', err);
     }
 
-    pathSvg.innerHTML = svgContent;
+    recalculateAllAgentPaths();
+  }
 
-    // Desenha Nós (cruzamentos)
-    nodesContainer.innerHTML = '';
+  /* ---------- 7. DESENHO DO MAPA REAL (LEAFLET) E OVERLAYS ---------- */
+  function renderGraph() {
+    streetsLayer.clearLayers();
+    nodesLayer.clearLayers();
+    routesLayer.clearLayers();
+    agentsLayer.clearLayers();
+
+    // Desenhos traçados de ruas e rotas sobre o mapa foram removidos
+    // para exibir o mapa limpo com marcadores e agentes.
+
+    // Pré-calcula os resultados de busca usados para colorir os nós (evita recalcular por nó)
+    var sampleResNos = activeTab === 'tab-nos' ? findPath('N1', true) : null;
+    var astarResComp = activeTab === 'tab-comparar' ? findPath('N1', true) : null;
+    var dijkResComp  = activeTab === 'tab-comparar' ? findPath('N1', false) : null;
+
+    // Desenha os nós (cruzamentos / saídas / bloqueios) como marcadores reais
     nodes.forEach(function (n) {
+<<<<<<< HEAD
       var el = document.createElement('div');
       el.className = 'node ' + (n.type !== 'normal' ? n.type : '');
       if (getFireDangerAtNode(n) > 0) el.classList.add('fire-active');
       el.style.left = n.x + 'px';
       el.style.top = n.y + 'px';
       el.title = n.name;
+=======
+      var classes = ['node'];
+      if (n.type !== 'normal') classes.push(n.type);
+>>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
 
-      if (activeTab === 'tab-nos') {
-        var sampleRes = findPath('N1', true);
-        if (sampleRes) {
-          if (sampleRes.openSet.indexOf(n.id) !== -1) el.classList.add('open-set');
-          else if (sampleRes.closedSet.indexOf(n.id) !== -1) el.classList.add('closed-set');
-        }
+      if (activeTab === 'tab-nos' && sampleResNos) {
+        if (sampleResNos.openSet.indexOf(n.id) !== -1) classes.push('open-set');
+        else if (sampleResNos.closedSet.indexOf(n.id) !== -1) classes.push('closed-set');
       } else if (activeTab === 'tab-comparar') {
-        var astarRes = findPath('N1', true);
-        var dijkRes = findPath('N1', false);
-        if (astarRes && astarRes.closedSet.indexOf(n.id) !== -1) el.classList.add('closed-set');
-        else if (dijkRes && dijkRes.closedSet.indexOf(n.id) !== -1) el.classList.add('dijkstra-visited');
+        if (astarResComp && astarResComp.closedSet.indexOf(n.id) !== -1) classes.push('closed-set');
+        else if (dijkResComp && dijkResComp.closedSet.indexOf(n.id) !== -1) classes.push('dijkstra-visited');
       }
 
-      nodesContainer.appendChild(el);
-    });
-
-    // Desenha Marcos Turísticos e Nomes de Ruas
-    tagsContainer.innerHTML = '';
-    LANDMARKS.forEach(function (lm) {
-      var badge = document.createElement('div');
-      badge.className = 'landmark-badge';
-      badge.style.left = lm.x + 'px';
-      badge.style.top = (lm.y - 12) + 'px';
-      badge.textContent = lm.text;
-      tagsContainer.appendChild(badge);
-    });
-
-    // Desenha Agentes
-    agentsContainer.innerHTML = '';
-    if (activeTab === 'tab-mapa') {
-      agents.forEach(function (ag) {
-        if (ag.evacuated) return;
-        var agEl = document.createElement('div');
-        agEl.className = 'agent';
-        agEl.style.left = ag.x + 'px';
-        agEl.style.top = ag.y + 'px';
-        agentsContainer.appendChild(agEl);
+      var p = xyToLatLng(n.x, n.y);
+      var icon = L.divIcon({
+        className: '',
+        html: '<div class="' + classes.join(' ') + '" title="' + n.name.replace(/"/g, '&quot;') + '"></div>',
+        iconSize: [13, 13],
+        iconAnchor: [6.5, 6.5]
       });
-    }
+
+      // interactive:false faz o clique "atravessar" o marcador e chegar até o mapa —
+      // é isso que permite clicar em cima de um nó para bloqueá-lo, por exemplo.
+      L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(nodesLayer);
+    });
+
+    // Desenha os agentes (pessoas evacuando) em tempo real nas ruas do Leaflet
+    updateAgentMarkers();
 
     renderActiveTabOverlay();
   }
 
   function renderActiveTabOverlay() {
     overlayContainer.innerHTML = '';
+<<<<<<< HEAD
     activeFires.forEach(function (fire) {
       var zone = document.createElement('div');
       zone.className = 'fire-zone';
@@ -540,6 +776,9 @@
       zone.style.height = (fire.radius * 2) + 'px';
       overlayContainer.appendChild(zone);
     });
+=======
+    costTagsLayer.clearLayers();
+>>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
 
     if (activeTab === 'tab-custo') {
       var res = findPath('N1', true);
@@ -551,6 +790,7 @@
           var h = f !== Infinity && g !== Infinity ? (f - g) : 0;
           if (g === Infinity) return;
 
+<<<<<<< HEAD
           var tag = document.createElement('div');
           tag.className = 'cost-tag';
           tag.style.left = n.x + 'px';
@@ -558,6 +798,15 @@
           var smoke = getFireDangerAtNode(n);
           tag.innerHTML = 'f:' + Math.round(f) + ' (g:' + Math.round(g) + '+h:' + Math.round(h) + ')' + (smoke > 0 ? '<br>fumaça +' + smoke.toFixed(1) + '×' : '');
           overlayContainer.appendChild(tag);
+=======
+          var p = xyToLatLng(n.x, n.y);
+          var icon = L.divIcon({
+            className: '',
+            html: '<div class="cost-tag">f:' + Math.round(f) + ' (g:' + Math.round(g) + '+h:' + Math.round(h) + ')</div>',
+            iconSize: null
+          });
+          L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(costTagsLayer);
+>>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
         });
       }
 
@@ -750,68 +999,157 @@
     }
   }
 
+<<<<<<< HEAD
   function tick() {
     elapsedSeconds += 1;
     if (elapsedSeconds % Math.max(2, Math.round(5 / Math.max(0.5, (fireSpreadInput ? parseFloat(fireSpreadInput.value) : 1)))) === 0) {
       spreadFire();
     }
+=======
+  var agentMarkersMap = new Map();
+>>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
 
-    var stepDelta = 0.25 * speed;
+  function clearAgentMarkers() {
+    agentMarkersMap.forEach(function (marker) {
+      agentsLayer.removeLayer(marker);
+    });
+    agentMarkersMap.clear();
+  }
+
+  function updateAgentMarkers() {
+    if (activeTab !== 'tab-mapa') {
+      clearAgentMarkers();
+      return;
+    }
+
+    var isRunning = (state === STATE.RUNNING);
+    var activeAgentIds = new Set();
     agents.forEach(function (ag) {
-      if (ag.evacuated) return;
+      if (!ag.evacuated) activeAgentIds.add(ag.id);
+    });
 
-      if (!ag.path || ag.path.length <= 1 || ag.pathIndex >= ag.path.length - 1) {
-        var nEvac = getNode(ag.currentNodeId);
-        if (nEvac && nEvac.type === 'exit') {
-          ag.evacuated = true;
-          evacuados++;
-          addLog('<span class="hl">Agente evacuou via ' + nEvac.name + '</span>');
-        } else {
-          var newRes = findPath(ag.currentNodeId, true);
-          if (newRes) {
-            ag.path = newRes.path;
-            ag.pathIndex = 0;
-            ag.segmentProgress = 0;
-          }
-        }
-        return;
-      }
-
-      ag.segmentProgress += stepDelta;
-      if (ag.segmentProgress >= 1) {
-        ag.segmentProgress = 0;
-        ag.pathIndex++;
-        ag.currentNodeId = ag.path[ag.pathIndex];
-
-        var currNode = getNode(ag.currentNodeId);
-        if (currNode && currNode.type === 'exit') {
-          ag.evacuated = true;
-          evacuados++;
-          addLog('<span class="hl">Agente evacuou via ' + currNode.name + '</span>');
-        }
-      }
-
-      if (!ag.evacuated && ag.path && ag.pathIndex < ag.path.length - 1) {
-        var nFrom = getNode(ag.path[ag.pathIndex]);
-        var nTo   = getNode(ag.path[ag.pathIndex + 1]);
-        if (nFrom && nTo) {
-          ag.x = nFrom.x + (nTo.x - nFrom.x) * ag.segmentProgress;
-          ag.y = nFrom.y + (nTo.y - nFrom.y) * ag.segmentProgress;
-        }
+    agentMarkersMap.forEach(function (marker, id) {
+      if (!activeAgentIds.has(id)) {
+        agentsLayer.removeLayer(marker);
+        agentMarkersMap.delete(id);
       }
     });
 
-    recalculateAllAgentPaths();
+    agents.forEach(function (ag) {
+      if (ag.evacuated) return;
+      var p = (ag.lat !== undefined && ag.lng !== undefined) ? { lat: ag.lat, lng: ag.lng } : xyToLatLng(ag.x, ag.y);
 
-    if (evacuados >= totalAgentes) {
-      addLog('<span class="hl">Todos os ' + totalAgentes + ' agentes foram evacuados com sucesso!</span>');
-      stopTimer();
-      setStatus(STATE.STOPPED);
+      if (!agentMarkersMap.has(ag.id)) {
+        var icon = L.divIcon({
+          className: '',
+          html: '<div class="agent' + (isRunning ? ' walking' : '') + '"></div>',
+          iconSize: [11, 11],
+          iconAnchor: [5.5, 5.5]
+        });
+        var marker = L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(agentsLayer);
+        agentMarkersMap.set(ag.id, marker);
+      } else {
+        var marker = agentMarkersMap.get(ag.id);
+        marker.setLatLng([p.lat, p.lng]);
+
+        var el = marker.getElement();
+        if (el) {
+          var agentDiv = el.querySelector('.agent');
+          if (agentDiv) {
+            if (isRunning) agentDiv.classList.add('walking');
+            else agentDiv.classList.remove('walking');
+          }
+        }
+      }
+    });
+  }
+
+  var lastAnimTime = null;
+
+  function animateLoop(timestamp) {
+    if (!lastAnimTime) lastAnimTime = timestamp;
+    var dt = (timestamp - lastAnimTime) / 1000;
+    lastAnimTime = timestamp;
+    if (dt > 0.1) dt = 0.1;
+
+    if (state === STATE.RUNNING) {
+      var stepRate = 0.08 * speed * dt;
+
+      agents.forEach(function (ag) {
+        if (ag.evacuated) return;
+
+        if (!ag.path || ag.path.length <= 1 || ag.pathIndex >= ag.path.length - 1) {
+          var nEvac = getNode(ag.currentNodeId);
+          if (nEvac && nEvac.type === 'exit') {
+            ag.evacuated = true;
+            evacuados++;
+            addLog('<span class="hl">Agente evacuou via ponto seguro ' + nEvac.name + ' 🚪</span>');
+          } else {
+            var newRes = findPath(ag.currentNodeId, true);
+            if (newRes && newRes.path.length > 1) {
+              ag.path = newRes.path;
+              ag.pathIndex = 0;
+              ag.segmentProgress = 0;
+            }
+          }
+          return;
+        }
+
+        ag.segmentProgress += stepRate;
+        if (ag.segmentProgress >= 1) {
+          ag.segmentProgress = 0;
+          ag.pathIndex++;
+          ag.currentNodeId = ag.path[ag.pathIndex];
+
+          var currNode = getNode(ag.currentNodeId);
+          if (currNode) {
+            ag.lat = currNode.lat;
+            ag.lng = currNode.lng;
+            ag.x = currNode.x;
+            ag.y = currNode.y;
+            if (currNode.type === 'exit') {
+              ag.evacuated = true;
+              evacuados++;
+              addLog('<span class="hl">Agente evacuou via ponto seguro ' + currNode.name + ' 🚪</span>');
+            }
+          }
+        }
+
+        if (!ag.evacuated && ag.path && ag.pathIndex < ag.path.length - 1) {
+          var nFrom = getNode(ag.path[ag.pathIndex]);
+          var nTo   = getNode(ag.path[ag.pathIndex + 1]);
+          if (nFrom && nTo) {
+            ag.lat = nFrom.lat + (nTo.lat - nFrom.lat) * ag.segmentProgress;
+            ag.lng = nFrom.lng + (nTo.lng - nFrom.lng) * ag.segmentProgress;
+            ag.x = nFrom.x + (nTo.x - nFrom.x) * ag.segmentProgress;
+            ag.y = nFrom.y + (nTo.y - nFrom.y) * ag.segmentProgress;
+          }
+        }
+      });
+
+      if (evacuados >= totalAgentes) {
+        addLog('<span class="hl">Todos os ' + totalAgentes + ' agentes foram evacuados com sucesso!</span>');
+        stopTimer();
+        setStatus(STATE.STOPPED);
+      }
+
+      updateStatsDisplay();
     }
 
-    updateStatsDisplay();
+    if (activeTab === 'tab-mapa') {
+      updateAgentMarkers();
+    }
+
+    requestAnimationFrame(animateLoop);
+  }
+
+  requestAnimationFrame(animateLoop);
+
+  async function tick() {
+    if (state !== STATE.RUNNING) return;
+    elapsedSeconds += 1;
+    await recalculateAllAgentPathsAsync();
     pushChartPoint();
-    renderGraph();
   }
 
   function startTimer() {
@@ -848,7 +1186,7 @@
     btnPausar.textContent = 'Simulação pausada';
   });
 
-  btnReiniciar.addEventListener('click', function () {
+  btnReiniciar.addEventListener('click', async function () {
     stopTimer();
     evacuados = 0;
     elapsedSeconds = 0;
@@ -858,8 +1196,10 @@
     lastFireComparison = null;
     totalAgentes = 50;
 
+    clearAgentMarkers();
+    randomizeExits();
     initAgents();
-    recalculateAllAgentPaths();
+    await recalculateAllAgentPathsAsync();
 
     fieldAgentes.textContent = totalAgentes;
     statTotal.textContent = totalAgentes;
@@ -905,12 +1245,12 @@
     });
   });
 
-  mapCanvas.addEventListener('click', function (evt) {
+  leafletMap.on('click', async function (evt) {
     if (!activeTool) return;
 
-    var rect = mapCanvas.getBoundingClientRect();
-    var x = Math.round(evt.clientX - rect.left);
-    var y = Math.round(evt.clientY - rect.top);
+    var xy = latLngToXY(evt.latlng.lat, evt.latlng.lng);
+    var x = xy.x;
+    var y = xy.y;
 
     if (activeTool === 'bloqueio') {
       var closest = null;
@@ -924,14 +1264,21 @@
         igniteFireAtNode(closest, 'manual');
       } else {
         var newId = 'NB' + (nodes.length + 1);
+<<<<<<< HEAD
         var newFireNode = { id: newId, name: 'Foco de incêndio (' + x + ',' + y + ')', x: x, y: y, type: 'blocked' };
         nodes.push(newFireNode);
         igniteFireAtNode(newFireNode, 'manual');
       }
+=======
+        nodes.push({ id: newId, name: 'Bloqueio (' + Math.round(x) + ',' + Math.round(y) + ')', x: x, y: y, type: 'blocked' });
+        addLog('<span class="warn">Novo ponto de risco adicionado</span>');
+      }
+      await recalculateAllAgentPathsAsync();
+>>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
 
     } else if (activeTool === 'saida') {
       var newExitId = 'NE' + (nodes.length + 1);
-      nodes.push({ id: newExitId, name: 'Nova Saída (' + x + ',' + y + ')', x: x, y: y, type: 'exit' });
+      nodes.push({ id: newExitId, name: 'Nova Saída (' + Math.round(x) + ',' + Math.round(y) + ')', x: x, y: y, type: 'exit' });
 
       var nearest = null;
       var minD = Infinity;
@@ -945,7 +1292,7 @@
         edges.push({ from: newExitId, to: nearest.id, weight: Math.round(minD), name: 'Acesso Saída' });
       }
       addLog('<span class="hl">Nova saída segura cadastrada</span>');
-      recalculateAllAgentPaths();
+      await recalculateAllAgentPathsAsync();
 
     } else if (activeTool === 'pessoa') {
       if (totalAgentes >= MAX_AGENTES) {
@@ -953,15 +1300,19 @@
         return;
       }
       totalAgentes += 1;
-      var newAgent = createAgent(totalAgentes);
-      newAgent.x = x;
-      newAgent.y = y;
+      var snap = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
+      var newAgent = createAgent(totalAgentes, snap.fromNodeId);
+      newAgent.lat = snap.lat;
+      newAgent.lng = snap.lng;
+      newAgent.x = snap.x;
+      newAgent.y = snap.y;
+      newAgent.segmentProgress = snap.progress;
       agents.push(newAgent);
 
       fieldAgentes.textContent = totalAgentes;
       statTotal.textContent = totalAgentes;
-      addLog('Novo agente adicionado ao mapa');
-      recalculateAllAgentPaths();
+      addLog('Novo agente posicionado na rua');
+      await recalculateAllAgentPathsAsync();
     }
 
     renderGraph();
@@ -1056,12 +1407,47 @@
   }
 
   /* ---------- 13. INICIALIZAÇÃO ---------- */
-  applySpeed(1.5);
-  initAgents();
-  recalculateAllAgentPaths();
-  setStatus(STATE.STOPPED);
-  updateStatsDisplay();
-  pushChartPoint();
-  renderGraph();
+  async function initApp() {
+    window.addEventListener('resize', function () { leafletMap.invalidateSize(); });
+    setTimeout(function () { leafletMap.invalidateSize(); }, 100);
 
+<<<<<<< HEAD
+=======
+    try {
+      var response = await fetch(
+        getApiUrl(
+          '/api/graph' +
+          '?south=' + GEO_BOUNDS.south +
+          '&west=' + GEO_BOUNDS.west +
+          '&north=' + GEO_BOUNDS.north +
+          '&east=' + GEO_BOUNDS.east
+        )
+      );
+      if (response.ok) {
+        var data = await response.json();
+        if (data && data.nodes && data.edges) {
+          INITIAL_NODES = data.nodes;
+          INITIAL_EDGES = data.edges;
+          nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
+          edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
+          addLog('Grafo do bairro carregado via API (/api/graph)');
+        }
+      }
+    } catch (e) {
+      console.warn('Usando grafo estático inicial (fallback local)', e);
+    }
+
+    applySpeed(1.5);
+    randomizeExits();
+    initAgents();
+    await recalculateAllAgentPathsAsync();
+    setStatus(STATE.STOPPED);
+    updateStatsDisplay();
+    pushChartPoint();
+    renderGraph();
+  }
+
+  initApp();
+
+>>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
 })();
