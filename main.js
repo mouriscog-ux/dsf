@@ -96,6 +96,8 @@
   var statTempo     = document.getElementById('stat-tempo');
   var statNos       = document.getElementById('stat-nos');
   var statCusto     = document.getElementById('stat-custo');
+  var statFireAstar = document.getElementById('stat-fire-astar');
+  var statFireDijkstra = document.getElementById('stat-fire-dijkstra');
   var fieldAgentes  = document.getElementById('field-agentes');
 
   var logList          = document.getElementById('log-list');
@@ -114,6 +116,10 @@
   var chartXEnd   = document.getElementById('chart-x-end');
 
   var toolButtons = document.querySelectorAll('.tool-btn');
+  var fireIntensityInput = document.getElementById('fire-intensity');
+  var fireSpreadInput = document.getElementById('fire-spread');
+  var fireIntensityLabel = document.getElementById('fire-intensity-label');
+  var fireSpreadLabel = document.getElementById('fire-spread-label');
 
   var DEFAULT_LOG = [
     'URBANISA TECH iniciada — 50 agentes',
@@ -184,6 +190,8 @@
 
   var nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
   var edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
+  var activeFires = [];
+  var lastFireComparison = null;
 
   function getNode(id) {
     for (var i = 0; i < nodes.length; i++) {
@@ -204,6 +212,34 @@
       }
     });
     return list;
+  }
+
+  function getEdgeNameBetween(a, b) {
+    for (var i = 0; i < edges.length; i++) {
+      var e = edges[i];
+      if ((e.from === a && e.to === b) || (e.from === b && e.to === a)) return e.name;
+    }
+    return 'rota de evacuação';
+  }
+
+  function getFireDangerAtNode(node) {
+    var danger = 0;
+    activeFires.forEach(function (fire) {
+      var d = Math.hypot(node.x - fire.x, node.y - fire.y);
+      if (d <= fire.radius) danger += (1 - d / fire.radius) * fire.intensity;
+    });
+    return danger;
+  }
+
+  function getFireEdgePenalty(fromNode, toNode) {
+    if (!fromNode || !toNode || activeFires.length === 0) return 0;
+    var mid = { x: (fromNode.x + toNode.x) / 2, y: (fromNode.y + toNode.y) / 2 };
+    var danger = getFireDangerAtNode(fromNode) + getFireDangerAtNode(toNode) + getFireDangerAtNode(mid);
+    return danger * 45;
+  }
+
+  function getDynamicWeight(currentId, neighborId, baseWeight) {
+    return baseWeight + getFireEdgePenalty(getNode(currentId), getNode(neighborId));
   }
 
   function distance(nodeA, nodeB) {
@@ -289,7 +325,7 @@
         var neighborId = nb.node.id;
         if (closedSet.indexOf(neighborId) !== -1) return;
 
-        var tentativeG = gScore[currentId] + nb.weight;
+        var tentativeG = gScore[currentId] + getDynamicWeight(currentId, neighborId, nb.weight);
         if (tentativeG < gScore[neighborId]) {
           cameFrom[neighborId] = currentId;
           gScore[neighborId] = tentativeG;
@@ -317,6 +353,29 @@
 
   var tickTimer = null;
   var agents = [];
+
+  function measurePath(startId, useHeuristic) {
+    var t0 = performance.now();
+    var res = findPath(startId, useHeuristic);
+    var responseMs = Math.max(1, Math.round((performance.now() - t0) * 1000) / 1000);
+    return {
+      responseMs: responseMs,
+      nodesExplored: res ? res.nodesExplored : 0,
+      cost: res ? res.cost : 0
+    };
+  }
+
+  function updateFireComparison(startId) {
+    var astar = measurePath(startId || 'N1', true);
+    var dijkstra = measurePath(startId || 'N1', false);
+    lastFireComparison = { astar: astar, dijkstra: dijkstra };
+    if (statFireAstar && activeFires.length > 0) {
+      statFireAstar.textContent = astar.responseMs + 'ms · ' + astar.nodesExplored + ' nós';
+    }
+    if (statFireDijkstra && activeFires.length > 0) {
+      statFireDijkstra.textContent = dijkstra.responseMs + 'ms · ' + dijkstra.nodesExplored + ' nós';
+    }
+  }
 
   function createAgent(id, startNodeId) {
     var normalNodes = nodes.filter(function (n) { return n.type === 'normal'; });
@@ -366,6 +425,13 @@
       statNos.textContent = Math.round(totalExploredSum / validCount);
       statCusto.textContent = (totalCostSum / validCount).toFixed(1);
     }
+    updateFireComparison(validCount > 0 ? agents[0].currentNodeId : 'N1');
+  }
+
+  function forceRecalculateForFire(nodeId) {
+    updateFireComparison(nodeId);
+    addLog('<span class="warn">AGENTES RECALCULANDO ROTA VIA A*</span>');
+    recalculateAllAgentPaths();
   }
 
   /* ---------- 7. DESENHO DO MAPA REALISTA E OVERLAYS ---------- */
@@ -415,6 +481,7 @@
     nodes.forEach(function (n) {
       var el = document.createElement('div');
       el.className = 'node ' + (n.type !== 'normal' ? n.type : '');
+      if (getFireDangerAtNode(n) > 0) el.classList.add('fire-active');
       el.style.left = n.x + 'px';
       el.style.top = n.y + 'px';
       el.title = n.name;
@@ -464,6 +531,15 @@
 
   function renderActiveTabOverlay() {
     overlayContainer.innerHTML = '';
+    activeFires.forEach(function (fire) {
+      var zone = document.createElement('div');
+      zone.className = 'fire-zone';
+      zone.style.left = fire.x + 'px';
+      zone.style.top = fire.y + 'px';
+      zone.style.width = (fire.radius * 2) + 'px';
+      zone.style.height = (fire.radius * 2) + 'px';
+      overlayContainer.appendChild(zone);
+    });
 
     if (activeTab === 'tab-custo') {
       var res = findPath('N1', true);
@@ -479,7 +555,8 @@
           tag.className = 'cost-tag';
           tag.style.left = n.x + 'px';
           tag.style.top = n.y + 'px';
-          tag.innerHTML = 'f:' + Math.round(f) + ' (g:' + Math.round(g) + '+h:' + Math.round(h) + ')';
+          var smoke = getFireDangerAtNode(n);
+          tag.innerHTML = 'f:' + Math.round(f) + ' (g:' + Math.round(g) + '+h:' + Math.round(h) + ')' + (smoke > 0 ? '<br>fumaça +' + smoke.toFixed(1) + '×' : '');
           overlayContainer.appendChild(tag);
         });
       }
@@ -539,9 +616,31 @@
         '    <div class="compare-metric"><span>Custo do caminho:</span><strong>' + dijkstraCost + 'm</strong></div>' +
         '    <div class="compare-metric"><span>Heurística h(n):</span><strong>h(n) = 0</strong></div>' +
         '  </div>' +
-        '</div>';
+        '</div>' +
+        (lastFireComparison ? '<div class="fire-comparison">' +
+        '<div class="compare-metric"><span>Resposta A* ao incêndio:</span><strong>' + lastFireComparison.astar.responseMs + 'ms · ' + lastFireComparison.astar.nodesExplored + ' nós</strong></div>' +
+        '<div class="compare-metric"><span>Resposta Dijkstra:</span><strong>' + lastFireComparison.dijkstra.responseMs + 'ms · ' + lastFireComparison.dijkstra.nodesExplored + ' nós</strong></div>' +
+        '</div>' : '');
       overlayContainer.appendChild(cardComp);
     }
+  }
+
+  function spreadFire() {
+    if (activeFires.length === 0) return;
+    var candidates = [];
+    activeFires.forEach(function (fire) {
+      nodes.forEach(function (n) {
+        if (n.type === 'exit' || n.type === 'blocked') return;
+        var d = Math.hypot(n.x - fire.x, n.y - fire.y);
+        if (d > 0 && d <= fire.radius + (fire.spread * 28)) {
+          candidates.push({ node: n, fire: fire, distance: d });
+        }
+      });
+    });
+    if (candidates.length === 0) return;
+    candidates.sort(function (a, b) { return a.distance - b.distance; });
+    var picked = candidates[0];
+    igniteFireAtNode(picked.node, 'spread');
   }
 
   /* ---------- 8. INTERAÇÃO DAS TABS DO MAPA ---------- */
@@ -653,6 +752,9 @@
 
   function tick() {
     elapsedSeconds += 1;
+    if (elapsedSeconds % Math.max(2, Math.round(5 / Math.max(0.5, (fireSpreadInput ? parseFloat(fireSpreadInput.value) : 1)))) === 0) {
+      spreadFire();
+    }
 
     var stepDelta = 0.25 * speed;
     agents.forEach(function (ag) {
@@ -752,6 +854,8 @@
     elapsedSeconds = 0;
     nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
     edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
+    activeFires = [];
+    lastFireComparison = null;
     totalAgentes = 50;
 
     initAgents();
@@ -760,6 +864,8 @@
     fieldAgentes.textContent = totalAgentes;
     statTotal.textContent = totalAgentes;
     updateStatsDisplay();
+    if (statFireAstar) statFireAstar.textContent = '—';
+    if (statFireDijkstra) statFireDijkstra.textContent = '—';
     setStatus(STATE.STOPPED);
     resetLog();
     resetChart();
@@ -815,14 +921,13 @@
       });
 
       if (closest && minDist < 35) {
-        closest.type = 'blocked';
-        addLog('<span class="warn">Nó ' + closest.name + ' foi bloqueado (incêndio/risco)</span>');
+        igniteFireAtNode(closest, 'manual');
       } else {
         var newId = 'NB' + (nodes.length + 1);
-        nodes.push({ id: newId, name: 'Bloqueio (' + x + ',' + y + ')', x: x, y: y, type: 'blocked' });
-        addLog('<span class="warn">Novo ponto de risco adicionado</span>');
+        var newFireNode = { id: newId, name: 'Foco de incêndio (' + x + ',' + y + ')', x: x, y: y, type: 'blocked' };
+        nodes.push(newFireNode);
+        igniteFireAtNode(newFireNode, 'manual');
       }
-      recalculateAllAgentPaths();
 
     } else if (activeTool === 'saida') {
       var newExitId = 'NE' + (nodes.length + 1);
@@ -861,6 +966,35 @@
 
     renderGraph();
   });
+
+  function igniteFireAtNode(node, source) {
+    if (!node) return;
+    node.type = 'blocked';
+    var intensity = fireIntensityInput ? parseFloat(fireIntensityInput.value) : 2;
+    var spread = fireSpreadInput ? parseFloat(fireSpreadInput.value) : 1;
+    var exists = activeFires.some(function (fire) { return fire.nodeId === node.id; });
+    if (!exists) {
+      activeFires.push({
+        nodeId: node.id,
+        x: node.x,
+        y: node.y,
+        radius: 34 + intensity * 15,
+        intensity: intensity,
+        spread: spread
+      });
+    }
+    var streetName = node.name;
+    edges.some(function (e) {
+      if (e.from === node.id || e.to === node.id) {
+        streetName = e.name;
+        return true;
+      }
+      return false;
+    });
+    addLog('<span class="warn">INCÊNDIO DETECTADO NA ' + streetName.toUpperCase() + '</span>');
+    if (source === 'spread') addLog('<span class="warn">FOGO SE ESPALHOU PARA ' + node.name.toUpperCase() + '</span>');
+    forceRecalculateForFire(node.id);
+  }
 
   /* ---------- 12. SLIDER DE VELOCIDADE ---------- */
   var speedTrack = document.getElementById('speed-track');
@@ -901,6 +1035,25 @@
   speedTrack.addEventListener('mousedown', startDrag);
   document.addEventListener('mousemove', moveDrag);
   document.addEventListener('mouseup', endDrag);
+
+  if (fireIntensityInput) {
+    fireIntensityInput.addEventListener('input', function () {
+      fireIntensityLabel.textContent = parseFloat(fireIntensityInput.value).toFixed(1) + '×';
+      activeFires.forEach(function (fire) {
+        fire.intensity = parseFloat(fireIntensityInput.value);
+        fire.radius = 34 + fire.intensity * 15;
+      });
+      recalculateAllAgentPaths();
+      renderGraph();
+    });
+  }
+
+  if (fireSpreadInput) {
+    fireSpreadInput.addEventListener('input', function () {
+      fireSpreadLabel.textContent = parseFloat(fireSpreadInput.value).toFixed(1) + '×';
+      activeFires.forEach(function (fire) { fire.spread = parseFloat(fireSpreadInput.value); });
+    });
+  }
 
   /* ---------- 13. INICIALIZAÇÃO ---------- */
   applySpeed(1.5);

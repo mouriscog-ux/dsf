@@ -158,6 +158,16 @@
           <div class="slider-track" id="speed-track"><div class="slider-fill" id="speed-fill"></div><div class="slider-thumb" id="speed-thumb"></div></div>
         </div>
 
+        <div class="slider-row fire-control">
+          <div class="slider-label"><span>Intensidade do Fogo</span><span id="fire-intensity-label">2.0×</span></div>
+          <input class="range-control" id="fire-intensity" type="range" min="1" max="5" step="0.5" value="2">
+        </div>
+
+        <div class="slider-row fire-control">
+          <div class="slider-label"><span>Taxa de Espalhamento</span><span id="fire-spread-label">1.0×</span></div>
+          <input class="range-control" id="fire-spread" type="range" min="0.5" max="3" step="0.5" value="1">
+        </div>
+
         <div class="panel-title spaced">Ferramentas da Feira</div>
         <div class="tool-btn" data-tool="bloqueio"><span class="ic danger">🔥</span> Adicionar bloqueio</div>
         <div class="tool-btn" data-tool="saida"><span class="ic safe">🚪</span> Marcar saída segura</div>
@@ -203,6 +213,8 @@
         <div class="stat-card"><span class="lbl">Tempo decorrido</span><span class="num" id="stat-tempo">00:00</span></div>
         <div class="stat-card"><span class="lbl">Nós explorados</span><span class="num amber" id="stat-nos">—</span></div>
         <div class="stat-card"><span class="lbl">Custo médio</span><span class="num" id="stat-custo">—</span></div>
+        <div class="stat-card"><span class="lbl">Resposta A*</span><span class="num safe" id="stat-fire-astar">—</span></div>
+        <div class="stat-card"><span class="lbl">Resposta Dijkstra</span><span class="num" id="stat-fire-dijkstra">—</span></div>
 
         <div class="panel-title spaced">Evacuados / tempo</div>
         <div class="chart-wrap">
