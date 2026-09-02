@@ -309,6 +309,25 @@
     return 'rota de evacuação';
   }
 
+  function safeNodeName(node, fallback) {
+    return node && node.name ? node.name : (fallback || 'ponto de evacuação');
+  }
+
+  function safeLatLngFromXY(x, y) {
+    var p = xyToLatLng(Number(x) || MODEL_BOUNDS.minX, Number(y) || MODEL_BOUNDS.minY);
+    return {
+      lat: Number.isFinite(p.lat) ? p.lat : (GEO_BOUNDS.north + GEO_BOUNDS.south) / 2,
+      lng: Number.isFinite(p.lng) ? p.lng : (GEO_BOUNDS.west + GEO_BOUNDS.east) / 2
+    };
+  }
+
+  function safeNodeLatLng(node) {
+    if (node && Number.isFinite(node.lat) && Number.isFinite(node.lng)) {
+      return { lat: node.lat, lng: node.lng };
+    }
+    return safeLatLngFromXY(node ? node.x : MODEL_BOUNDS.minX, node ? node.y : MODEL_BOUNDS.minY);
+  }
+
   function getFireDangerAtNode(node) {
     var danger = 0;
     activeFires.forEach(function (fire) {
@@ -446,7 +465,6 @@
   var tickTimer = null;
   var agents = [];
 
-<<<<<<< HEAD
   function measurePath(startId, useHeuristic) {
     var t0 = performance.now();
     var res = findPath(startId, useHeuristic);
@@ -470,12 +488,6 @@
     }
   }
 
-  function createAgent(id, startNodeId) {
-    var normalNodes = nodes.filter(function (n) { return n.type === 'normal'; });
-    if (!startNodeId) {
-      var randNode = normalNodes[Math.floor(Math.random() * normalNodes.length)];
-      startNodeId = randNode ? randNode.id : 'N1';
-=======
   function snapToNearestStreet(lat, lng) {
     var minDistance = Infinity;
     var bestPoint = { lat: lat, lng: lng, x: 0, y: 0, fromNodeId: 'N1', toNodeId: 'N2', progress: 0 };
@@ -530,7 +542,6 @@
       var temp = validCandidates[i];
       validCandidates[i] = validCandidates[j];
       validCandidates[j] = temp;
->>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
     }
 
     var numExits = Math.min(3, validCandidates.length);
@@ -569,9 +580,11 @@
     var nFrom = getNode(randEdge.from);
     var nTo = getNode(randEdge.to);
     var t = Math.random();
+    var fromLatLng = safeNodeLatLng(nFrom);
+    var toLatLng = safeNodeLatLng(nTo);
 
-    var posLat = nFrom.lat + (nTo.lat - nFrom.lat) * t;
-    var posLng = nFrom.lng + (nTo.lng - nFrom.lng) * t;
+    var posLat = fromLatLng.lat + (toLatLng.lat - fromLatLng.lat) * t;
+    var posLng = fromLatLng.lng + (toLatLng.lng - fromLatLng.lng) * t;
     var posX = nFrom.x + (nTo.x - nFrom.x) * t;
     var posY = nFrom.y + (nTo.y - nFrom.y) * t;
 
@@ -725,17 +738,9 @@
 
     // Desenha os nós (cruzamentos / saídas / bloqueios) como marcadores reais
     nodes.forEach(function (n) {
-<<<<<<< HEAD
-      var el = document.createElement('div');
-      el.className = 'node ' + (n.type !== 'normal' ? n.type : '');
-      if (getFireDangerAtNode(n) > 0) el.classList.add('fire-active');
-      el.style.left = n.x + 'px';
-      el.style.top = n.y + 'px';
-      el.title = n.name;
-=======
       var classes = ['node'];
       if (n.type !== 'normal') classes.push(n.type);
->>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
+      if (getFireDangerAtNode(n) > 0) classes.push('fire-active');
 
       if (activeTab === 'tab-nos' && sampleResNos) {
         if (sampleResNos.openSet.indexOf(n.id) !== -1) classes.push('open-set');
@@ -766,19 +771,17 @@
 
   function renderActiveTabOverlay() {
     overlayContainer.innerHTML = '';
-<<<<<<< HEAD
-    activeFires.forEach(function (fire) {
-      var zone = document.createElement('div');
-      zone.className = 'fire-zone';
-      zone.style.left = fire.x + 'px';
-      zone.style.top = fire.y + 'px';
-      zone.style.width = (fire.radius * 2) + 'px';
-      zone.style.height = (fire.radius * 2) + 'px';
-      overlayContainer.appendChild(zone);
-    });
-=======
     costTagsLayer.clearLayers();
->>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
+    activeFires.forEach(function (fire) {
+      var p = xyToLatLng(fire.x, fire.y);
+      var icon = L.divIcon({
+        className: '',
+        html: '<div class="fire-zone" style="width:' + (fire.radius * 2) + 'px;height:' + (fire.radius * 2) + 'px;"></div>',
+        iconSize: [fire.radius * 2, fire.radius * 2],
+        iconAnchor: [fire.radius, fire.radius]
+      });
+      L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(costTagsLayer);
+    });
 
     if (activeTab === 'tab-custo') {
       var res = findPath('N1', true);
@@ -790,23 +793,14 @@
           var h = f !== Infinity && g !== Infinity ? (f - g) : 0;
           if (g === Infinity) return;
 
-<<<<<<< HEAD
-          var tag = document.createElement('div');
-          tag.className = 'cost-tag';
-          tag.style.left = n.x + 'px';
-          tag.style.top = n.y + 'px';
-          var smoke = getFireDangerAtNode(n);
-          tag.innerHTML = 'f:' + Math.round(f) + ' (g:' + Math.round(g) + '+h:' + Math.round(h) + ')' + (smoke > 0 ? '<br>fumaça +' + smoke.toFixed(1) + '×' : '');
-          overlayContainer.appendChild(tag);
-=======
           var p = xyToLatLng(n.x, n.y);
+          var smoke = getFireDangerAtNode(n);
           var icon = L.divIcon({
             className: '',
-            html: '<div class="cost-tag">f:' + Math.round(f) + ' (g:' + Math.round(g) + '+h:' + Math.round(h) + ')</div>',
+            html: '<div class="cost-tag">f:' + Math.round(f) + ' (g:' + Math.round(g) + '+h:' + Math.round(h) + ')' + (smoke > 0 ? '<br>fumaça +' + smoke.toFixed(1) + '×' : '') + '</div>',
             iconSize: null
           });
           L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(costTagsLayer);
->>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
         });
       }
 
@@ -999,15 +993,7 @@
     }
   }
 
-<<<<<<< HEAD
-  function tick() {
-    elapsedSeconds += 1;
-    if (elapsedSeconds % Math.max(2, Math.round(5 / Math.max(0.5, (fireSpreadInput ? parseFloat(fireSpreadInput.value) : 1)))) === 0) {
-      spreadFire();
-    }
-=======
   var agentMarkersMap = new Map();
->>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
 
   function clearAgentMarkers() {
     agentMarkersMap.forEach(function (marker) {
@@ -1148,6 +1134,9 @@
   async function tick() {
     if (state !== STATE.RUNNING) return;
     elapsedSeconds += 1;
+    if (elapsedSeconds % Math.max(2, Math.round(5 / Math.max(0.5, (fireSpreadInput ? parseFloat(fireSpreadInput.value) : 1)))) === 0) {
+      spreadFire();
+    }
     await recalculateAllAgentPathsAsync();
     pushChartPoint();
   }
@@ -1264,17 +1253,11 @@
         igniteFireAtNode(closest, 'manual');
       } else {
         var newId = 'NB' + (nodes.length + 1);
-<<<<<<< HEAD
         var newFireNode = { id: newId, name: 'Foco de incêndio (' + x + ',' + y + ')', x: x, y: y, type: 'blocked' };
         nodes.push(newFireNode);
         igniteFireAtNode(newFireNode, 'manual');
       }
-=======
-        nodes.push({ id: newId, name: 'Bloqueio (' + Math.round(x) + ',' + Math.round(y) + ')', x: x, y: y, type: 'blocked' });
-        addLog('<span class="warn">Novo ponto de risco adicionado</span>');
-      }
       await recalculateAllAgentPathsAsync();
->>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
 
     } else if (activeTool === 'saida') {
       var newExitId = 'NE' + (nodes.length + 1);
@@ -1411,8 +1394,6 @@
     window.addEventListener('resize', function () { leafletMap.invalidateSize(); });
     setTimeout(function () { leafletMap.invalidateSize(); }, 100);
 
-<<<<<<< HEAD
-=======
     try {
       var response = await fetch(
         getApiUrl(
@@ -1449,5 +1430,4 @@
 
   initApp();
 
->>>>>>> a449470eab4386d527956d635d65e61dc70f0e50
 })();
