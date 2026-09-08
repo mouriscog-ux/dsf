@@ -116,7 +116,10 @@
   var chartXMid   = document.getElementById('chart-x-mid');
   var chartXEnd   = document.getElementById('chart-x-end');
 
-  var toolButtons = document.querySelectorAll('.tool-btn');
+  var toolButtons = document.querySelectorAll('.tool-btn, .map-tool');
+  var mapInspector = document.getElementById('map-inspector');
+  var mapToolButtons = document.querySelectorAll('.map-tool');
+  var appShell = document.querySelector('.app');
   var fireIntensityInput = document.getElementById('fire-intensity');
   var fireSpreadInput = document.getElementById('fire-spread');
   var fireIntensityLabel = document.getElementById('fire-intensity-label');
@@ -217,11 +220,24 @@
 
   // Camadas redesenhadas a cada frame da simulação
   var streetsLayer  = L.layerGroup().addTo(leafletMap); // arestas do grafo (ruas)
+  var urbanLayer    = L.layerGroup().addTo(leafletMap); // quarteiroes, predios e calcadas
   var nodesLayer     = L.layerGroup().addTo(leafletMap); // cruzamentos / saídas / bloqueios
   var routesLayer    = L.layerGroup().addTo(leafletMap); // rotas calculadas pelo A*
   var agentsLayer    = L.layerGroup().addTo(leafletMap); // pessoas em evacuação
   var costTagsLayer  = L.layerGroup().addTo(leafletMap); // rótulos f(n)/g(n)/h(n)
   var landmarksLayer = L.layerGroup().addTo(leafletMap); // marcos turísticos (estáticos)
+
+  var URBAN_BLOCKS = [
+    { id: 'B1', name: 'Quadra Norte', points: [[45,42],[125,42],[125,78],[78,78],[58,98],[45,98]] },
+    { id: 'B2', name: 'Quadra Galvao', points: [[155,42],[285,42],[285,82],[215,82],[155,72]] },
+    { id: 'B3', name: 'Quadra Metro', points: [[300,42],[435,42],[435,105],[365,105],[330,82],[300,82]] },
+    { id: 'B4', name: 'Quadra Estudantes', points: [[45,120],[112,120],[112,190],[45,210]] },
+    { id: 'B5', name: 'Quadra Central', points: [[235,112],[330,112],[330,160],[285,160],[270,185],[235,175]] },
+    { id: 'B6', name: 'Quadra Leste', points: [[350,125],[435,125],[435,215],[365,215],[365,180],[350,170]] },
+    { id: 'B7', name: 'Quadra Gloria', points: [[45,225],[125,210],[150,250],[135,325],[45,345]] },
+    { id: 'B8', name: 'Quadra Sul', points: [[180,245],[255,245],[255,345],[165,345]] },
+    { id: 'B9', name: 'Quadra Conselheiro', points: [[300,245],[435,245],[435,345],[285,345]] }
+  ];
 
   /* ---------- 4. GRAFO REALISTA DO BAIRRO DA LIBERDADE ---------- */
   var INITIAL_NODES = [
@@ -292,10 +308,10 @@
     edges.forEach(function (e) {
       if (e.from === nodeId) {
         var target = getNode(e.to);
-        if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
+        if (target && target.type !== 'blocked' && !e.blocked) list.push({ node: target, weight: roadCost(e) });
       } else if (e.to === nodeId) {
         var target = getNode(e.from);
-        if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
+        if (target && target.type !== 'blocked' && !e.blocked) list.push({ node: target, weight: roadCost(e) });
       }
     });
     return list;
@@ -307,6 +323,26 @@
       if ((e.from === a && e.to === b) || (e.from === b && e.to === a)) return e.name || e.roadName || 'rota de evacuação';
     }
     return 'rota de evacuação';
+  }
+
+  function showInspector(title, body, kind) {
+    if (!mapInspector) return;
+    mapInspector.hidden = false;
+    mapInspector.innerHTML = '<button class="inspector-close" aria-label="Fechar">×</button><div class="inspector-kind">' + (kind || 'MAPA') + '</div><h3>' + title + '</h3><div class="inspector-body">' + body + '</div>';
+    mapInspector.querySelector('.inspector-close').onclick = function () { mapInspector.hidden = true; };
+  }
+
+  function inspectEdge(edge) {
+    var ratio = edge.capacity ? Math.round((edge.congestion / edge.capacity) * 100) : 0;
+    var risk = edge.risk || 0;
+    showInspector(edge.name || 'Rua', '<div><b>Distância</b><span>' + edge.weight + ' m</span></div><div><b>Agentes</b><span>' + (edge.congestion || 0) + '</span></div><div><b>Congestionamento</b><span>' + ratio + '%</span></div><div><b>Risco</b><span>' + (risk > 60 ? 'Alto' : risk > 20 ? 'Atenção' : 'Baixo') + '</span></div><div><b>Custo A*</b><span>' + Math.round(roadCost(edge)) + '</span></div><div><b>Status</b><span>' + (edge.blocked ? 'Bloqueada' : 'Livre') + '</span></div>', 'RUA');
+  }
+
+  function inspectAgent(agent) {
+    var node = getNode(agent.currentNodeId);
+    var edge = agent.path && agent.pathIndex < agent.path.length - 1 ? edgeBetween(agent.path[agent.pathIndex], agent.path[agent.pathIndex + 1]) : null;
+    var danger = node ? getFireDangerAtNode(node) : (edge ? edge.risk / 25 : 0);
+    showInspector('Pessoa #' + agent.id, '<div><b>Origem</b><span>' + (agent.originName || 'Mapa') + '</span></div><div><b>Destino</b><span>' + (agent.targetExitName || 'A definir') + '</span></div><div><b>Rota</b><span>' + (agent.path ? agent.path.length - 1 : 0) + ' ruas</span></div><div><b>Velocidade</b><span>' + (agent.speed || 1).toFixed(2) + 'x</span></div><div><b>Risco</b><span>' + (danger > 1.5 ? 'Alto' : danger > 0 ? 'Atenção' : 'Seguro') + '</span></div><div><b>Status</b><span>' + (agent.evacuated ? 'EVACUADO' : danger > 0 ? 'EM RISCO' : 'EVACUANDO') + '</span></div>', 'PESSOA');
   }
 
   function safeNodeName(node, fallback) {
@@ -345,7 +381,8 @@
   }
 
   function getDynamicWeight(currentId, neighborId, baseWeight) {
-    return baseWeight + getFireEdgePenalty(getNode(currentId), getNode(neighborId));
+    var e = edgeBetween(currentId, neighborId);
+    return e ? roadCost(e) : baseWeight + getFireEdgePenalty(getNode(currentId), getNode(neighborId));
   }
 
   function distance(nodeA, nodeB) {
@@ -464,6 +501,53 @@
 
   var tickTimer = null;
   var agents = [];
+  var routeRecalculations = 0;
+  var riskPeople = 0;
+  var trappedPeople = 0;
+  var avgDistance = 0;
+  var avgEvacuationTime = 0;
+  var congestionLevel = 0;
+  var exploredAstarTotal = 0;
+  var exploredDijkstraTotal = 0;
+
+  function ensureEdgeState() {
+    edges.forEach(function (e) {
+      if (!Number.isFinite(e.congestion)) e.congestion = 0;
+      if (!Number.isFinite(e.risk)) e.risk = 0;
+      if (!Number.isFinite(e.capacity)) e.capacity = Math.max(4, Math.round(e.weight / 22));
+      if (typeof e.blocked !== 'boolean') e.blocked = false;
+    });
+  }
+
+  function edgeBetween(a, b) {
+    return edges.find(function (e) { return (e.from === a && e.to === b) || (e.from === b && e.to === a); });
+  }
+
+  function roadCost(e) {
+    if (!e || e.blocked) return Infinity;
+    var loadRatio = e.congestion / Math.max(1, e.capacity);
+    return e.weight * (1 + loadRatio * loadRatio * 2.5) + (e.risk || 0) * 2.2;
+  }
+
+  function updateDynamicRoadState() {
+    ensureEdgeState();
+    edges.forEach(function (e) { e.congestion = 0; });
+    agents.forEach(function (ag) {
+      if (ag.evacuated || !ag.path || ag.pathIndex >= ag.path.length - 1) return;
+      var e = edgeBetween(ag.path[ag.pathIndex], ag.path[ag.pathIndex + 1]);
+      if (e) e.congestion += 1;
+    });
+    var totalCapacity = 0, totalLoad = 0;
+    edges.forEach(function (e) {
+      var a = getNode(e.from), b = getNode(e.to);
+      var danger = a && b ? getFireEdgePenalty(a, b) / 45 : 0;
+      e.risk = Math.min(100, danger * 25);
+      if (e.risk >= 88) e.blocked = true;
+      totalCapacity += e.capacity;
+      totalLoad += e.congestion;
+    });
+    congestionLevel = totalCapacity ? Math.min(100, totalLoad / totalCapacity * 100) : 0;
+  }
 
   function measurePath(startId, useHeuristic) {
     var t0 = performance.now();
@@ -529,6 +613,21 @@
     return bestPoint;
   }
 
+  function nearestGraphEdge(x, y) {
+    var best = null;
+    edges.forEach(function (e) {
+      var a = getNode(e.from), b = getNode(e.to);
+      if (!a || !b) return;
+      var dx = b.x - a.x, dy = b.y - a.y;
+      var lenSq = dx * dx + dy * dy || 1;
+      var t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lenSq));
+      var px = a.x + t * dx, py = a.y + t * dy;
+      var d = Math.hypot(x - px, y - py);
+      if (!best || d < best.distance) best = { edge: e, distance: d, x: px, y: py };
+    });
+    return best;
+  }
+
   function randomizeExits() {
     nodes.forEach(function (n) {
       if (n.type !== 'blocked') n.type = 'normal';
@@ -572,23 +671,19 @@
         segmentProgress: 0,
         x: randNode.x,
         y: randNode.y,
-        evacuated: false
+        evacuated: false,
+        speed: 0.72 + Math.random() * 0.62,
+        distanceTravelled: 0,
+        evacuationTime: 0,
+        reroutes: 0
       };
     }
 
     var randEdge = validEdges[Math.floor(Math.random() * validEdges.length)];
     var nFrom = getNode(randEdge.from);
     var nTo = getNode(randEdge.to);
-    var t = Math.random();
-    var fromLatLng = safeNodeLatLng(nFrom);
-    var toLatLng = safeNodeLatLng(nTo);
-
-    var posLat = fromLatLng.lat + (toLatLng.lat - fromLatLng.lat) * t;
-    var posLng = fromLatLng.lng + (toLatLng.lng - fromLatLng.lng) * t;
-    var posX = nFrom.x + (nTo.x - nFrom.x) * t;
-    var posY = nFrom.y + (nTo.y - nFrom.y) * t;
-
-    var startId = t >= 0.5 ? randEdge.to : randEdge.from;
+    var startId = Math.random() >= 0.5 ? randEdge.to : randEdge.from;
+    var startNode = getNode(startId);
     var res = findPath(startId, true);
 
     return {
@@ -596,12 +691,16 @@
       currentNodeId: startId,
       path: res ? res.path : [startId],
       pathIndex: 0,
-      segmentProgress: t,
-      lat: posLat,
-      lng: posLng,
-      x: posX,
-      y: posY,
-      evacuated: false
+      segmentProgress: 0,
+      lat: safeNodeLatLng(startNode).lat,
+      lng: safeNodeLatLng(startNode).lng,
+      x: startNode.x,
+      y: startNode.y,
+      evacuated: false,
+      speed: 0.72 + Math.random() * 0.62,
+      distanceTravelled: 0,
+      evacuationTime: 0,
+      reroutes: 0
     };
   }
 
@@ -629,6 +728,7 @@
   }
 
   function recalculateAllAgentPaths() {
+    updateDynamicRoadState();
     var totalExploredSum = 0;
     var totalCostSum = 0;
     var validCount = 0;
@@ -637,12 +737,19 @@
       if (ag.evacuated) return;
       var res = findPath(ag.currentNodeId, true);
       if (res && res.path.length > 0) {
+        var sameRoute = ag.path && ag.path.slice(ag.pathIndex || 0).join(',') === res.path.join(',');
+        if (!sameRoute) {
+          ag.reroutes = (ag.reroutes || 0) + 1;
+          routeRecalculations++;
+          ag.pathIndex = 0;
+          ag.segmentProgress = 0;
+        }
         ag.path = res.path;
-        ag.pathIndex = 0;
-        ag.segmentProgress = 0;
+        ag.targetExitName = res.destinationExit ? res.destinationExit.name : ag.targetExitName;
         totalExploredSum += res.nodesExplored;
         totalCostSum += res.cost;
         validCount++;
+        exploredAstarTotal += res.nodesExplored;
       }
     });
 
@@ -651,6 +758,7 @@
       statCusto.textContent = (totalCostSum / validCount).toFixed(1);
     }
     updateFireComparison(validCount > 0 ? agents[0].currentNodeId : 'N1');
+    if (validCount > 0) exploredDijkstraTotal += measurePath(agents[0].currentNodeId, false).nodesExplored;
   }
 
   function forceRecalculateForFire(nodeId) {
@@ -667,6 +775,12 @@
   }
 
   async function recalculateAllAgentPathsAsync() {
+    // A decisão deve usar o mesmo grafo dinâmico exibido no mapa. O endpoint
+    // legado não conhece congestionamento/riscos transitórios e reiniciava o
+    // progresso dos agentes, produzindo teletransportes a cada tick.
+    recalculateAllAgentPaths();
+    return;
+
     var activeAgents = agents.filter(function (ag) { return !ag.evacuated; });
     if (activeAgents.length === 0) return;
 
@@ -723,14 +837,73 @@
   }
 
   /* ---------- 7. DESENHO DO MAPA REAL (LEAFLET) E OVERLAYS ---------- */
+  function renderUrbanDistrict() {
+    urbanLayer.clearLayers();
+    URBAN_BLOCKS.forEach(function (block, index) {
+      var polygon = block.points.map(function (point) { return xyToLatLng(point[0], point[1]); });
+      var area = L.polygon(polygon, {
+        color: index % 2 ? '#718096' : '#5d6878',
+        weight: 1.2,
+        opacity: 0.75,
+        fillColor: index % 2 ? '#293342' : '#252d3b',
+        fillOpacity: 0.88,
+        interactive: true
+      }).addTo(urbanLayer);
+      area.bindTooltip('<strong>' + block.name + '</strong><br>Area urbana / edificios', { sticky: true });
+
+      // Pequenos volumes internos deixam o quarteirao legivel sem virar ruido.
+      var centroid = block.points.reduce(function (acc, p) { return [acc[0] + p[0], acc[1] + p[1]]; }, [0, 0]);
+      centroid[0] /= block.points.length; centroid[1] /= block.points.length;
+      var building = L.rectangle([
+        xyToLatLng(centroid[0] - 12, centroid[1] - 9),
+        xyToLatLng(centroid[0] + 12, centroid[1] + 9)
+      ], { color: '#8994a5', weight: 1, opacity: 0.28, fillColor: '#101722', fillOpacity: 0.45, interactive: false }).addTo(urbanLayer);
+    });
+  }
+
   function renderGraph() {
     streetsLayer.clearLayers();
     nodesLayer.clearLayers();
     routesLayer.clearLayers();
     agentsLayer.clearLayers();
+    renderUrbanDistrict();
 
-    // Desenhos traçados de ruas e rotas sobre o mapa foram removidos
-    // para exibir o mapa limpo com marcadores e agentes.
+    // A malha do grafo fica visível para que o usuário entenda por onde
+    // os agentes realmente podem andar.
+    edges.forEach(function (e) {
+      var from = getNode(e.from), to = getNode(e.to);
+      if (!from || !to) return;
+      var risk = e.risk || 0;
+      var color = e.blocked ? '#ff4d2e' : risk >= 60 ? '#ff9f1c' : (e.congestion > e.capacity ? '#eab308' : '#42d6c5');
+      var streetWidth = e.name && (e.name.indexOf('Av.') >= 0 || e.name.indexOf('Galvão') >= 0) ? 13 : 9;
+      var sidewalk = L.polyline([safeNodeLatLng(from), safeNodeLatLng(to)], {
+        color: e.blocked ? '#7d2d28' : '#8c929b', weight: streetWidth + 5, opacity: 0.8,
+        lineCap: 'butt', dashArray: e.blocked ? '10 8' : null
+      }).addTo(streetsLayer);
+      var line = L.polyline([safeNodeLatLng(from), safeNodeLatLng(to)], {
+        color: e.blocked ? '#f04f3c' : '#303947', weight: streetWidth,
+        opacity: 0.96, lineCap: 'butt'
+      }).addTo(streetsLayer);
+      var center = L.polyline([safeNodeLatLng(from), safeNodeLatLng(to)], {
+        color: color, weight: e.blocked ? 3 : 1.5, opacity: 0.9,
+        dashArray: e.blocked ? '7 7' : (streetWidth > 10 ? '10 10' : null), lineCap: 'butt'
+      }).addTo(streetsLayer);
+      line.bindTooltip('<strong>' + (e.name || 'Rua') + '</strong><br>Fluxo: ' + (e.congestion || 0) + '/' + e.capacity + '<br>Risco: ' + Math.round(risk) + '%', { sticky: true });
+      sidewalk.bindTooltip('<strong>' + (e.name || 'Rua') + '</strong><br>Distancia: ' + e.weight + ' m<br>Custo A*: ' + Math.round(roadCost(e)), { sticky: true });
+      line.on('click', function () { addLog('Rua selecionada: ' + (e.name || 'Rua') + ' · custo A*: ' + Math.round(roadCost(e))); });
+    });
+
+    var routeKeys = new Set();
+    agents.forEach(function (ag) {
+      if (ag.evacuated || !ag.path) return;
+      for (var ri = ag.pathIndex || 0; ri < ag.path.length - 1; ri++) {
+        var key = ag.path[ri] + ':' + ag.path[ri + 1];
+        if (routeKeys.has(key)) continue;
+        routeKeys.add(key);
+        var routeFrom = getNode(ag.path[ri]), routeTo = getNode(ag.path[ri + 1]);
+        if (routeFrom && routeTo) L.polyline([safeNodeLatLng(routeFrom), safeNodeLatLng(routeTo)], { color: '#20e3c2', weight: 5, opacity: 0.58, dashArray: '3 8' }).addTo(routesLayer);
+      }
+    });
 
     // Pré-calcula os resultados de busca usados para colorir os nós (evita recalcular por nó)
     var sampleResNos = activeTab === 'tab-nos' ? findPath('N1', true) : null;
@@ -761,7 +934,9 @@
 
       // interactive:false faz o clique "atravessar" o marcador e chegar até o mapa —
       // é isso que permite clicar em cima de um nó para bloqueá-lo, por exemplo.
-      L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(nodesLayer);
+      var nodeMarker = L.marker([p.lat, p.lng], { icon: icon, interactive: true }).addTo(nodesLayer);
+      nodeMarker.bindTooltip('<strong>' + n.name + '</strong><br>' + (n.type === 'exit' ? 'Saída segura' : n.type === 'blocked' ? 'Bloqueado / risco' : 'Cruzamento'), { direction: 'top' });
+      nodeMarker.on('click', function () { addLog('Nó selecionado: ' + n.name); });
     });
 
     // Desenha os agentes (pessoas evacuando) em tempo real nas ruas do Leaflet
@@ -775,6 +950,11 @@
     costTagsLayer.clearLayers();
     activeFires.forEach(function (fire) {
       var p = xyToLatLng(fire.x, fire.y);
+      L.circle([p.lat, p.lng], {
+        radius: Math.max(22, fire.radius * 4.1),
+        color: '#ff5a36', weight: 2, opacity: 0.8,
+        fillColor: '#ff3d1f', fillOpacity: 0.16, interactive: true
+      }).bindTooltip('<strong>Area de risco</strong><br>Intensidade: ' + fire.intensity.toFixed(1) + '<br>Ruas afetadas recalculam o custo').addTo(costTagsLayer);
       var icon = L.divIcon({
         className: '',
         html: '<div class="fire-zone" style="width:' + (fire.radius * 2) + 'px;height:' + (fire.radius * 2) + 'px;"></div>',
@@ -917,6 +1097,18 @@
     statEvacuados.textContent = evacuados;
     statTotal.textContent = totalAgentes;
     statTempo.textContent = formatTime(elapsedSeconds);
+    var active = agents.filter(function (a) { return !a.evacuated; });
+    riskPeople = active.filter(function (a) {
+      var node = getNode(a.currentNodeId);
+      return node && getFireDangerAtNode(node) > 0;
+    }).length;
+    trappedPeople = active.filter(function (a) { return !a.path || a.path.length < 2; }).length;
+    var distanceSum = agents.reduce(function (sum, a) { return sum + (a.distanceTravelled || 0); }, 0);
+    avgDistance = agents.length ? distanceSum / agents.length : 0;
+    var evacuatedTimes = agents.filter(function (a) { return a.evacuated && a.evacuationTime; });
+    avgEvacuationTime = evacuatedTimes.length ? evacuatedTimes.reduce(function (s, a) { return s + a.evacuationTime; }, 0) / evacuatedTimes.length : 0;
+    statNos.textContent = exploredAstarTotal ? Math.round(exploredAstarTotal / Math.max(1, routeRecalculations)) : '—';
+    statCusto.textContent = congestionLevel.toFixed(0) + '% fluxo';
   }
 
   var evacHistory = [];
@@ -1033,11 +1225,14 @@
           iconSize: [11, 11],
           iconAnchor: [5.5, 5.5]
         });
-        var marker = L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(agentsLayer);
+        var marker = L.marker([p.lat, p.lng], { icon: icon, interactive: true }).addTo(agentsLayer);
+        marker.bindTooltip('Pessoa #' + ag.id + '<br>Estado: ' + (ag.evacuated ? 'evacuada' : isRunning ? 'em movimento' : 'aguardando') + '<br>Velocidade: ' + (ag.speed || 1).toFixed(2) + 'x', { direction: 'top', offset: [0, -6] });
+        marker.on('click', function () { inspectAgent(ag); addLog('Pessoa #' + ag.id + ' selecionada'); });
         agentMarkersMap.set(ag.id, marker);
       } else {
         var marker = agentMarkersMap.get(ag.id);
         marker.setLatLng([p.lat, p.lng]);
+        marker.setTooltipContent('Pessoa #' + ag.id + '<br>Estado: ' + (isRunning ? 'em movimento' : 'aguardando') + '<br>Velocidade: ' + (ag.speed || 1).toFixed(2) + 'x');
 
         var el = marker.getElement();
         if (el) {
@@ -1060,10 +1255,15 @@
     if (dt > 0.1) dt = 0.1;
 
     if (state === STATE.RUNNING) {
-      var stepRate = 0.08 * speed * dt;
+      updateDynamicRoadState();
 
       agents.forEach(function (ag) {
         if (ag.evacuated) return;
+        ag.evacuationTime = elapsedSeconds;
+        var edge = ag.path && ag.pathIndex < ag.path.length - 1 ? edgeBetween(ag.path[ag.pathIndex], ag.path[ag.pathIndex + 1]) : null;
+        var congestionSlowdown = edge ? Math.max(0.28, 1 - (edge.congestion / Math.max(1, edge.capacity)) * 0.58) : 1;
+        var riskSlowdown = edge ? Math.max(0.2, 1 - (edge.risk || 0) / 160) : 1;
+        var stepRate = 0.08 * speed * ag.speed * congestionSlowdown * riskSlowdown * dt;
 
         if (!ag.path || ag.path.length <= 1 || ag.pathIndex >= ag.path.length - 1) {
           var nEvac = getNode(ag.currentNodeId);
@@ -1083,6 +1283,7 @@
         }
 
         ag.segmentProgress += stepRate;
+        if (edge) ag.distanceTravelled += edge.weight * stepRate;
         if (ag.segmentProgress >= 1) {
           ag.segmentProgress = 0;
           ag.pathIndex++;
@@ -1139,6 +1340,8 @@
       spreadFire();
     }
     await recalculateAllAgentPathsAsync();
+    updateDynamicRoadState();
+    renderGraph();
     pushChartPoint();
   }
 
@@ -1183,6 +1386,14 @@
     nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
     edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
     activeFires = [];
+    routeRecalculations = 0;
+    riskPeople = 0;
+    trappedPeople = 0;
+    avgDistance = 0;
+    avgEvacuationTime = 0;
+    congestionLevel = 0;
+    exploredAstarTotal = 0;
+    exploredDijkstraTotal = 0;
     lastFireComparison = null;
     totalAgentes = 50;
 
@@ -1202,7 +1413,7 @@
 
     toolButtons.forEach(function (b) { b.classList.remove('active'); });
     mapCanvas.classList.remove('tool-active');
-    activeTool = null;
+    activeTool = 'selecionar';
 
     btnIniciar.textContent = '▶ Iniciar simulação';
     btnPausar.textContent = '⏸ Pausar';
@@ -1210,13 +1421,46 @@
   });
 
   /* ---------- 11. FERRAMENTAS DO MAPA ---------- */
-  var activeTool = null;
+  var activeTool = 'selecionar';
+
+  function addPeopleToScenario(amount) {
+    var candidates = nodes.filter(function (n) { return n.type !== 'blocked' && n.type !== 'exit'; });
+    for (var i = 0; i < amount; i++) {
+      if (!candidates.length) break;
+      var base = candidates[Math.floor(Math.random() * candidates.length)];
+      var person = createAgent(agents.length + 1, base.id);
+      person.originName = base.name;
+      agents.push(person);
+    }
+    totalAgentes = agents.length;
+    fieldAgentes.textContent = totalAgentes;
+    statTotal.textContent = totalAgentes;
+    recalculateAllAgentPaths();
+    renderGraph();
+    addLog(amount + ' pessoa(s) adicionada(s) ao cenário');
+  }
+
+  document.getElementById('btn-add-10').addEventListener('click', function () { addPeopleToScenario(10); });
+  document.getElementById('btn-add-50').addEventListener('click', function () { addPeopleToScenario(50); });
+  document.getElementById('btn-clear-people').addEventListener('click', function () {
+    agents = agents.filter(function (a) { return a.evacuated; });
+    totalAgentes = agents.length;
+    fieldAgentes.textContent = totalAgentes;
+    statTotal.textContent = totalAgentes;
+    renderGraph();
+    addLog('Pessoas não evacuadas removidas');
+  });
+
+  document.getElementById('btn-presentation').addEventListener('click', function () {
+    appShell.classList.toggle('presentation-mode');
+    setTimeout(function () { leafletMap.invalidateSize(); }, 50);
+  });
 
   toolButtons.forEach(function (btn) {
     btn.addEventListener('click', function () {
       var tool = btn.dataset.tool;
       if (activeTool === tool) {
-        activeTool = null;
+    activeTool = 'selecionar';
         btn.classList.remove('active');
         mapCanvas.classList.remove('tool-active');
         return;
@@ -1224,12 +1468,15 @@
       toolButtons.forEach(function (b) { b.classList.remove('active'); });
       btn.classList.add('active');
       activeTool = tool;
-      mapCanvas.classList.add('tool-active');
+      mapCanvas.classList.toggle('tool-active', tool !== 'selecionar');
 
       var toolNames = {
-        bloqueio: 'Adicionar bloqueio (🔥)',
-        saida: 'Marcar saída segura (🚪)',
-        pessoa: 'Adicionar pessoa (🧍)'
+        bloqueio: 'Bloquear uma rua',
+        incendio: 'Adicionar incêndio',
+        saida: 'Criar saída segura',
+        pessoa: 'Adicionar pessoa',
+        apagar: 'Apagar elemento',
+        selecionar: 'Selecionar elemento'
       };
       addLog('Ferramenta ativa: ' + toolNames[tool] + ' — clique no mapa');
     });
@@ -1242,7 +1489,65 @@
     var x = xy.x;
     var y = xy.y;
 
+    var hitAgent = agents.filter(function (a) { return !a.evacuated; }).sort(function (a, b) {
+      return Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y);
+    })[0];
+    if (activeTool === 'selecionar') {
+      var selectedEdge = nearestGraphEdge(x, y);
+      if (hitAgent && Math.hypot(hitAgent.x - x, hitAgent.y - y) < 18) inspectAgent(hitAgent);
+      else if (selectedEdge && selectedEdge.distance < 22) inspectEdge(selectedEdge.edge);
+      else showInspector('Mapa de evacuação', '<p>Escolha uma ferramenta e clique sobre uma rua para montar o cenário.</p>', 'CENÁRIO');
+      return;
+    }
+
+    if (activeTool === 'apagar') {
+      if (hitAgent && Math.hypot(hitAgent.x - x, hitAgent.y - y) < 18) {
+        agents = agents.filter(function (a) { return a.id !== hitAgent.id; });
+        totalAgentes = agents.length;
+        addLog('Pessoa removida do cenário');
+      } else {
+        var eraseEdge = nearestGraphEdge(x, y);
+        if (eraseEdge && eraseEdge.distance < 22) {
+          eraseEdge.edge.blocked = false;
+          activeFires = activeFires.filter(function (f) { return Math.hypot(f.x - eraseEdge.x, f.y - eraseEdge.y) > 24; });
+          addLog('Bloqueio removido — rotas recalculadas');
+        } else {
+          var eraseFire = activeFires.slice().sort(function (a, b) { return Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y); })[0];
+          if (eraseFire && Math.hypot(eraseFire.x - x, eraseFire.y - y) < eraseFire.radius) activeFires.splice(activeFires.indexOf(eraseFire), 1);
+        }
+      }
+      recalculateAllAgentPaths();
+      updateStatsDisplay();
+      renderGraph();
+      return;
+    }
+
+    if (activeTool === 'incendio') {
+      var intensity = fireIntensityInput ? parseFloat(fireIntensityInput.value) : 2;
+      activeFires.push({ nodeId: 'fire-' + Date.now(), x: x, y: y, radius: 30 + intensity * 15, intensity: intensity, spread: fireSpreadInput ? parseFloat(fireSpreadInput.value) : 1 });
+      addLog('<span class="warn">Incêndio adicionado — áreas próximas recalculando</span>');
+      recalculateAllAgentPaths();
+      renderGraph();
+      return;
+    }
+
     if (activeTool === 'bloqueio') {
+      var streetHit = nearestGraphEdge(x, y);
+      if (streetHit && streetHit.distance < 22) {
+        streetHit.edge.blocked = true;
+        var streetFire = {
+          nodeId: 'edge-' + streetHit.edge.from + '-' + streetHit.edge.to,
+          x: streetHit.x, y: streetHit.y,
+          radius: 30 + (fireIntensityInput ? parseFloat(fireIntensityInput.value) : 2) * 15,
+          intensity: fireIntensityInput ? parseFloat(fireIntensityInput.value) : 2,
+          spread: fireSpreadInput ? parseFloat(fireSpreadInput.value) : 1
+        };
+        activeFires.push(streetFire);
+        addLog('<span class="warn">RUA BLOQUEADA: ' + (streetHit.edge.name || 'conexão do grafo').toUpperCase() + '</span>');
+        recalculateAllAgentPaths();
+        renderGraph();
+        return;
+      }
       var closest = null;
       var minDist = Infinity;
       nodes.forEach(function (n) {
@@ -1261,6 +1566,14 @@
       await recalculateAllAgentPathsAsync();
 
     } else if (activeTool === 'saida') {
+      var existingExit = nodes.find(function (n) { return n.type === 'exit' && Math.hypot(n.x - x, n.y - y) < 24; });
+      if (existingExit) {
+        existingExit.type = 'normal';
+        addLog('<span class="warn">Saída segura removida: ' + existingExit.name + '</span>');
+        recalculateAllAgentPaths();
+        renderGraph();
+        return;
+      }
       var newExitId = 'NE' + (nodes.length + 1);
       nodes.push({ id: newExitId, name: 'Nova Saída (' + Math.round(x) + ',' + Math.round(y) + ')', x: x, y: y, type: 'exit' });
 
@@ -1285,12 +1598,16 @@
       }
       totalAgentes += 1;
       var snap = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
-      var newAgent = createAgent(totalAgentes, snap.fromNodeId);
-      newAgent.lat = snap.lat;
-      newAgent.lng = snap.lng;
-      newAgent.x = snap.x;
-      newAgent.y = snap.y;
-      newAgent.segmentProgress = snap.progress;
+      // O agente entra pelo cruzamento mais próximo da rua clicada. Assim
+      // a posição e o primeiro segmento da rota sempre coincidem.
+      var snappedNodeId = snap.progress < 0.5 ? snap.fromNodeId : snap.toNodeId;
+      var snappedNode = getNode(snappedNodeId);
+      var newAgent = createAgent(totalAgentes, snappedNodeId);
+      newAgent.lat = safeNodeLatLng(snappedNode).lat;
+      newAgent.lng = safeNodeLatLng(snappedNode).lng;
+      newAgent.x = snappedNode.x;
+      newAgent.y = snappedNode.y;
+      newAgent.segmentProgress = 0;
       agents.push(newAgent);
 
       fieldAgentes.textContent = totalAgentes;
