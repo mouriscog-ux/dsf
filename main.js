@@ -292,10 +292,10 @@
     edges.forEach(function (e) {
       if (e.from === nodeId) {
         var target = getNode(e.to);
-        if (target && target.type !== 'blocked' && !e.blocked) list.push({ node: target, weight: roadCost(e) });
+        if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
       } else if (e.to === nodeId) {
         var target = getNode(e.from);
-        if (target && target.type !== 'blocked' && !e.blocked) list.push({ node: target, weight: roadCost(e) });
+        if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
       }
     });
     return list;
@@ -345,8 +345,7 @@
   }
 
   function getDynamicWeight(currentId, neighborId, baseWeight) {
-    var e = edgeBetween(currentId, neighborId);
-    return e ? roadCost(e) : baseWeight + getFireEdgePenalty(getNode(currentId), getNode(neighborId));
+    return baseWeight + getFireEdgePenalty(getNode(currentId), getNode(neighborId));
   }
 
   function distance(nodeA, nodeB) {
@@ -465,53 +464,6 @@
 
   var tickTimer = null;
   var agents = [];
-  var routeRecalculations = 0;
-  var riskPeople = 0;
-  var trappedPeople = 0;
-  var avgDistance = 0;
-  var avgEvacuationTime = 0;
-  var congestionLevel = 0;
-  var exploredAstarTotal = 0;
-  var exploredDijkstraTotal = 0;
-
-  function ensureEdgeState() {
-    edges.forEach(function (e) {
-      if (!Number.isFinite(e.congestion)) e.congestion = 0;
-      if (!Number.isFinite(e.risk)) e.risk = 0;
-      if (!Number.isFinite(e.capacity)) e.capacity = Math.max(4, Math.round(e.weight / 22));
-      if (typeof e.blocked !== 'boolean') e.blocked = false;
-    });
-  }
-
-  function edgeBetween(a, b) {
-    return edges.find(function (e) { return (e.from === a && e.to === b) || (e.from === b && e.to === a); });
-  }
-
-  function roadCost(e) {
-    if (!e || e.blocked) return Infinity;
-    var loadRatio = e.congestion / Math.max(1, e.capacity);
-    return e.weight * (1 + loadRatio * loadRatio * 2.5) + (e.risk || 0) * 2.2;
-  }
-
-  function updateDynamicRoadState() {
-    ensureEdgeState();
-    edges.forEach(function (e) { e.congestion = 0; });
-    agents.forEach(function (ag) {
-      if (ag.evacuated || !ag.path || ag.pathIndex >= ag.path.length - 1) return;
-      var e = edgeBetween(ag.path[ag.pathIndex], ag.path[ag.pathIndex + 1]);
-      if (e) e.congestion += 1;
-    });
-    var totalCapacity = 0, totalLoad = 0;
-    edges.forEach(function (e) {
-      var a = getNode(e.from), b = getNode(e.to);
-      var danger = a && b ? getFireEdgePenalty(a, b) / 45 : 0;
-      e.risk = Math.min(100, danger * 25);
-      if (e.risk >= 88) e.blocked = true;
-      totalCapacity += e.capacity;
-      totalLoad += e.congestion;
-    });
-    congestionLevel = totalCapacity ? Math.min(100, totalLoad / totalCapacity * 100) : 0;
-  }
 
   function measurePath(startId, useHeuristic) {
     var t0 = performance.now();
@@ -577,21 +529,6 @@
     return bestPoint;
   }
 
-  function nearestGraphEdge(x, y) {
-    var best = null;
-    edges.forEach(function (e) {
-      var a = getNode(e.from), b = getNode(e.to);
-      if (!a || !b) return;
-      var dx = b.x - a.x, dy = b.y - a.y;
-      var lenSq = dx * dx + dy * dy || 1;
-      var t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lenSq));
-      var px = a.x + t * dx, py = a.y + t * dy;
-      var d = Math.hypot(x - px, y - py);
-      if (!best || d < best.distance) best = { edge: e, distance: d, x: px, y: py };
-    });
-    return best;
-  }
-
   function randomizeExits() {
     nodes.forEach(function (n) {
       if (n.type !== 'blocked') n.type = 'normal';
@@ -635,19 +572,23 @@
         segmentProgress: 0,
         x: randNode.x,
         y: randNode.y,
-        evacuated: false,
-        speed: 0.72 + Math.random() * 0.62,
-        distanceTravelled: 0,
-        evacuationTime: 0,
-        reroutes: 0
+        evacuated: false
       };
     }
 
     var randEdge = validEdges[Math.floor(Math.random() * validEdges.length)];
     var nFrom = getNode(randEdge.from);
     var nTo = getNode(randEdge.to);
-    var startId = Math.random() >= 0.5 ? randEdge.to : randEdge.from;
-    var startNode = getNode(startId);
+    var t = Math.random();
+    var fromLatLng = safeNodeLatLng(nFrom);
+    var toLatLng = safeNodeLatLng(nTo);
+
+    var posLat = fromLatLng.lat + (toLatLng.lat - fromLatLng.lat) * t;
+    var posLng = fromLatLng.lng + (toLatLng.lng - fromLatLng.lng) * t;
+    var posX = nFrom.x + (nTo.x - nFrom.x) * t;
+    var posY = nFrom.y + (nTo.y - nFrom.y) * t;
+
+    var startId = t >= 0.5 ? randEdge.to : randEdge.from;
     var res = findPath(startId, true);
 
     return {
@@ -655,16 +596,12 @@
       currentNodeId: startId,
       path: res ? res.path : [startId],
       pathIndex: 0,
-      segmentProgress: 0,
-      lat: safeNodeLatLng(startNode).lat,
-      lng: safeNodeLatLng(startNode).lng,
-      x: startNode.x,
-      y: startNode.y,
-      evacuated: false,
-      speed: 0.72 + Math.random() * 0.62,
-      distanceTravelled: 0,
-      evacuationTime: 0,
-      reroutes: 0
+      segmentProgress: t,
+      lat: posLat,
+      lng: posLng,
+      x: posX,
+      y: posY,
+      evacuated: false
     };
   }
 
@@ -691,7 +628,6 @@
   }
 
   function recalculateAllAgentPaths() {
-    updateDynamicRoadState();
     var totalExploredSum = 0;
     var totalCostSum = 0;
     var validCount = 0;
@@ -700,18 +636,12 @@
       if (ag.evacuated) return;
       var res = findPath(ag.currentNodeId, true);
       if (res && res.path.length > 0) {
-        var sameRoute = ag.path && ag.path.slice(ag.pathIndex || 0).join(',') === res.path.join(',');
-        if (!sameRoute) {
-          ag.reroutes = (ag.reroutes || 0) + 1;
-          routeRecalculations++;
-          ag.pathIndex = 0;
-          ag.segmentProgress = 0;
-        }
         ag.path = res.path;
+        ag.pathIndex = 0;
+        ag.segmentProgress = 0;
         totalExploredSum += res.nodesExplored;
         totalCostSum += res.cost;
         validCount++;
-        exploredAstarTotal += res.nodesExplored;
       }
     });
 
@@ -720,7 +650,6 @@
       statCusto.textContent = (totalCostSum / validCount).toFixed(1);
     }
     updateFireComparison(validCount > 0 ? agents[0].currentNodeId : 'N1');
-    if (validCount > 0) exploredDijkstraTotal += measurePath(agents[0].currentNodeId, false).nodesExplored;
   }
 
   function forceRecalculateForFire(nodeId) {
@@ -737,12 +666,6 @@
   }
 
   async function recalculateAllAgentPathsAsync() {
-    // A decisão deve usar o mesmo grafo dinâmico exibido no mapa. O endpoint
-    // legado não conhece congestionamento/riscos transitórios e reiniciava o
-    // progresso dos agentes, produzindo teletransportes a cada tick.
-    recalculateAllAgentPaths();
-    return;
-
     var activeAgents = agents.filter(function (ag) { return !ag.evacuated; });
     if (activeAgents.length === 0) return;
 
@@ -805,31 +728,8 @@
     routesLayer.clearLayers();
     agentsLayer.clearLayers();
 
-    // A malha do grafo fica visível para que o usuário entenda por onde
-    // os agentes realmente podem andar.
-    edges.forEach(function (e) {
-      var from = getNode(e.from), to = getNode(e.to);
-      if (!from || !to) return;
-      var risk = e.risk || 0;
-      var color = e.blocked ? '#ff4d2e' : risk >= 60 ? '#ff9f1c' : (e.congestion > e.capacity ? '#eab308' : '#42d6c5');
-      var line = L.polyline([safeNodeLatLng(from), safeNodeLatLng(to)], {
-        color: color, weight: e.blocked ? 6 : 3 + Math.min(4, (e.congestion || 0) / 4),
-        opacity: 0.78, dashArray: e.blocked ? '8 7' : null
-      }).addTo(streetsLayer);
-      line.bindTooltip('<strong>' + (e.name || 'Rua') + '</strong><br>Fluxo: ' + (e.congestion || 0) + '/' + e.capacity + '<br>Risco: ' + Math.round(risk) + '%', { sticky: true });
-    });
-
-    var routeKeys = new Set();
-    agents.forEach(function (ag) {
-      if (ag.evacuated || !ag.path) return;
-      for (var ri = ag.pathIndex || 0; ri < ag.path.length - 1; ri++) {
-        var key = ag.path[ri] + ':' + ag.path[ri + 1];
-        if (routeKeys.has(key)) continue;
-        routeKeys.add(key);
-        var routeFrom = getNode(ag.path[ri]), routeTo = getNode(ag.path[ri + 1]);
-        if (routeFrom && routeTo) L.polyline([safeNodeLatLng(routeFrom), safeNodeLatLng(routeTo)], { color: '#20e3c2', weight: 5, opacity: 0.58, dashArray: '3 8' }).addTo(routesLayer);
-      }
-    });
+    // Desenhos traçados de ruas e rotas sobre o mapa foram removidos
+    // para exibir o mapa limpo com marcadores e agentes.
 
     // Pré-calcula os resultados de busca usados para colorir os nós (evita recalcular por nó)
     var sampleResNos = activeTab === 'tab-nos' ? findPath('N1', true) : null;
@@ -860,9 +760,7 @@
 
       // interactive:false faz o clique "atravessar" o marcador e chegar até o mapa —
       // é isso que permite clicar em cima de um nó para bloqueá-lo, por exemplo.
-      var nodeMarker = L.marker([p.lat, p.lng], { icon: icon, interactive: true }).addTo(nodesLayer);
-      nodeMarker.bindTooltip('<strong>' + n.name + '</strong><br>' + (n.type === 'exit' ? 'Saída segura' : n.type === 'blocked' ? 'Bloqueado / risco' : 'Cruzamento'), { direction: 'top' });
-      nodeMarker.on('click', function () { addLog('Nó selecionado: ' + n.name); });
+      L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(nodesLayer);
     });
 
     // Desenha os agentes (pessoas evacuando) em tempo real nas ruas do Leaflet
@@ -1018,18 +916,6 @@
     statEvacuados.textContent = evacuados;
     statTotal.textContent = totalAgentes;
     statTempo.textContent = formatTime(elapsedSeconds);
-    var active = agents.filter(function (a) { return !a.evacuated; });
-    riskPeople = active.filter(function (a) {
-      var node = getNode(a.currentNodeId);
-      return node && getFireDangerAtNode(node) > 0;
-    }).length;
-    trappedPeople = active.filter(function (a) { return !a.path || a.path.length < 2; }).length;
-    var distanceSum = agents.reduce(function (sum, a) { return sum + (a.distanceTravelled || 0); }, 0);
-    avgDistance = agents.length ? distanceSum / agents.length : 0;
-    var evacuatedTimes = agents.filter(function (a) { return a.evacuated && a.evacuationTime; });
-    avgEvacuationTime = evacuatedTimes.length ? evacuatedTimes.reduce(function (s, a) { return s + a.evacuationTime; }, 0) / evacuatedTimes.length : 0;
-    statNos.textContent = exploredAstarTotal ? Math.round(exploredAstarTotal / Math.max(1, routeRecalculations)) : '—';
-    statCusto.textContent = congestionLevel.toFixed(0) + '% fluxo';
   }
 
   var evacHistory = [];
@@ -1146,14 +1032,11 @@
           iconSize: [11, 11],
           iconAnchor: [5.5, 5.5]
         });
-        var marker = L.marker([p.lat, p.lng], { icon: icon, interactive: true }).addTo(agentsLayer);
-        marker.bindTooltip('Pessoa #' + ag.id + '<br>Estado: ' + (ag.evacuated ? 'evacuada' : isRunning ? 'em movimento' : 'aguardando') + '<br>Velocidade: ' + (ag.speed || 1).toFixed(2) + 'x', { direction: 'top', offset: [0, -6] });
-        marker.on('click', function () { addLog('Pessoa #' + ag.id + ' selecionada'); });
+        var marker = L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(agentsLayer);
         agentMarkersMap.set(ag.id, marker);
       } else {
         var marker = agentMarkersMap.get(ag.id);
         marker.setLatLng([p.lat, p.lng]);
-        marker.setTooltipContent('Pessoa #' + ag.id + '<br>Estado: ' + (isRunning ? 'em movimento' : 'aguardando') + '<br>Velocidade: ' + (ag.speed || 1).toFixed(2) + 'x');
 
         var el = marker.getElement();
         if (el) {
@@ -1176,15 +1059,10 @@
     if (dt > 0.1) dt = 0.1;
 
     if (state === STATE.RUNNING) {
-      updateDynamicRoadState();
+      var stepRate = 0.08 * speed * dt;
 
       agents.forEach(function (ag) {
         if (ag.evacuated) return;
-        ag.evacuationTime = elapsedSeconds;
-        var edge = ag.path && ag.pathIndex < ag.path.length - 1 ? edgeBetween(ag.path[ag.pathIndex], ag.path[ag.pathIndex + 1]) : null;
-        var congestionSlowdown = edge ? Math.max(0.28, 1 - (edge.congestion / Math.max(1, edge.capacity)) * 0.58) : 1;
-        var riskSlowdown = edge ? Math.max(0.2, 1 - (edge.risk || 0) / 160) : 1;
-        var stepRate = 0.08 * speed * ag.speed * congestionSlowdown * riskSlowdown * dt;
 
         if (!ag.path || ag.path.length <= 1 || ag.pathIndex >= ag.path.length - 1) {
           var nEvac = getNode(ag.currentNodeId);
@@ -1204,7 +1082,6 @@
         }
 
         ag.segmentProgress += stepRate;
-        if (edge) ag.distanceTravelled += edge.weight * stepRate;
         if (ag.segmentProgress >= 1) {
           ag.segmentProgress = 0;
           ag.pathIndex++;
@@ -1261,8 +1138,6 @@
       spreadFire();
     }
     await recalculateAllAgentPathsAsync();
-    updateDynamicRoadState();
-    renderGraph();
     pushChartPoint();
   }
 
@@ -1307,14 +1182,6 @@
     nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
     edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
     activeFires = [];
-    routeRecalculations = 0;
-    riskPeople = 0;
-    trappedPeople = 0;
-    avgDistance = 0;
-    avgEvacuationTime = 0;
-    congestionLevel = 0;
-    exploredAstarTotal = 0;
-    exploredDijkstraTotal = 0;
     lastFireComparison = null;
     totalAgentes = 50;
 
@@ -1375,22 +1242,6 @@
     var y = xy.y;
 
     if (activeTool === 'bloqueio') {
-      var streetHit = nearestGraphEdge(x, y);
-      if (streetHit && streetHit.distance < 22) {
-        streetHit.edge.blocked = true;
-        var streetFire = {
-          nodeId: 'edge-' + streetHit.edge.from + '-' + streetHit.edge.to,
-          x: streetHit.x, y: streetHit.y,
-          radius: 30 + (fireIntensityInput ? parseFloat(fireIntensityInput.value) : 2) * 15,
-          intensity: fireIntensityInput ? parseFloat(fireIntensityInput.value) : 2,
-          spread: fireSpreadInput ? parseFloat(fireSpreadInput.value) : 1
-        };
-        activeFires.push(streetFire);
-        addLog('<span class="warn">RUA BLOQUEADA: ' + (streetHit.edge.name || 'conexão do grafo').toUpperCase() + '</span>');
-        recalculateAllAgentPaths();
-        renderGraph();
-        return;
-      }
       var closest = null;
       var minDist = Infinity;
       nodes.forEach(function (n) {
@@ -1409,14 +1260,6 @@
       await recalculateAllAgentPathsAsync();
 
     } else if (activeTool === 'saida') {
-      var existingExit = nodes.find(function (n) { return n.type === 'exit' && Math.hypot(n.x - x, n.y - y) < 24; });
-      if (existingExit) {
-        existingExit.type = 'normal';
-        addLog('<span class="warn">Saída segura removida: ' + existingExit.name + '</span>');
-        recalculateAllAgentPaths();
-        renderGraph();
-        return;
-      }
       var newExitId = 'NE' + (nodes.length + 1);
       nodes.push({ id: newExitId, name: 'Nova Saída (' + Math.round(x) + ',' + Math.round(y) + ')', x: x, y: y, type: 'exit' });
 
@@ -1441,16 +1284,12 @@
       }
       totalAgentes += 1;
       var snap = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
-      // O agente entra pelo cruzamento mais próximo da rua clicada. Assim
-      // a posição e o primeiro segmento da rota sempre coincidem.
-      var snappedNodeId = snap.progress < 0.5 ? snap.fromNodeId : snap.toNodeId;
-      var snappedNode = getNode(snappedNodeId);
-      var newAgent = createAgent(totalAgentes, snappedNodeId);
-      newAgent.lat = safeNodeLatLng(snappedNode).lat;
-      newAgent.lng = safeNodeLatLng(snappedNode).lng;
-      newAgent.x = snappedNode.x;
-      newAgent.y = snappedNode.y;
-      newAgent.segmentProgress = 0;
+      var newAgent = createAgent(totalAgentes, snap.fromNodeId);
+      newAgent.lat = snap.lat;
+      newAgent.lng = snap.lng;
+      newAgent.x = snap.x;
+      newAgent.y = snap.y;
+      newAgent.segmentProgress = snap.progress;
       agents.push(newAgent);
 
       fieldAgentes.textContent = totalAgentes;
