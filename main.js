@@ -631,16 +631,8 @@
     var randEdge = validEdges[Math.floor(Math.random() * validEdges.length)];
     var nFrom = getNode(randEdge.from);
     var nTo = getNode(randEdge.to);
-    var t = Math.random();
-    var fromLatLng = safeNodeLatLng(nFrom);
-    var toLatLng = safeNodeLatLng(nTo);
-
-    var posLat = fromLatLng.lat + (toLatLng.lat - fromLatLng.lat) * t;
-    var posLng = fromLatLng.lng + (toLatLng.lng - fromLatLng.lng) * t;
-    var posX = nFrom.x + (nTo.x - nFrom.x) * t;
-    var posY = nFrom.y + (nTo.y - nFrom.y) * t;
-
-    var startId = t >= 0.5 ? randEdge.to : randEdge.from;
+    var startId = Math.random() >= 0.5 ? randEdge.to : randEdge.from;
+    var startNode = getNode(startId);
     var res = findPath(startId, true);
 
     return {
@@ -648,11 +640,11 @@
       currentNodeId: startId,
       path: res ? res.path : [startId],
       pathIndex: 0,
-      segmentProgress: t,
-      lat: posLat,
-      lng: posLng,
-      x: posX,
-      y: posY,
+      segmentProgress: 0,
+      lat: safeNodeLatLng(startNode).lat,
+      lng: safeNodeLatLng(startNode).lng,
+      x: startNode.x,
+      y: startNode.y,
       evacuated: false,
       speed: 0.72 + Math.random() * 0.62,
       distanceTravelled: 0,
@@ -791,8 +783,31 @@
     routesLayer.clearLayers();
     agentsLayer.clearLayers();
 
-    // Desenhos traçados de ruas e rotas sobre o mapa foram removidos
-    // para exibir o mapa limpo com marcadores e agentes.
+    // A malha do grafo fica visível para que o usuário entenda por onde
+    // os agentes realmente podem andar.
+    edges.forEach(function (e) {
+      var from = getNode(e.from), to = getNode(e.to);
+      if (!from || !to) return;
+      var risk = e.risk || 0;
+      var color = e.blocked ? '#ff4d2e' : risk >= 60 ? '#ff9f1c' : (e.congestion > e.capacity ? '#eab308' : '#42d6c5');
+      var line = L.polyline([safeNodeLatLng(from), safeNodeLatLng(to)], {
+        color: color, weight: e.blocked ? 6 : 3 + Math.min(4, (e.congestion || 0) / 4),
+        opacity: 0.78, dashArray: e.blocked ? '8 7' : null
+      }).addTo(streetsLayer);
+      line.bindTooltip('<strong>' + (e.name || 'Rua') + '</strong><br>Fluxo: ' + (e.congestion || 0) + '/' + e.capacity + '<br>Risco: ' + Math.round(risk) + '%', { sticky: true });
+    });
+
+    var routeKeys = new Set();
+    agents.forEach(function (ag) {
+      if (ag.evacuated || !ag.path) return;
+      for (var ri = ag.pathIndex || 0; ri < ag.path.length - 1; ri++) {
+        var key = ag.path[ri] + ':' + ag.path[ri + 1];
+        if (routeKeys.has(key)) continue;
+        routeKeys.add(key);
+        var routeFrom = getNode(ag.path[ri]), routeTo = getNode(ag.path[ri + 1]);
+        if (routeFrom && routeTo) L.polyline([safeNodeLatLng(routeFrom), safeNodeLatLng(routeTo)], { color: '#20e3c2', weight: 5, opacity: 0.58, dashArray: '3 8' }).addTo(routesLayer);
+      }
+    });
 
     // Pré-calcula os resultados de busca usados para colorir os nós (evita recalcular por nó)
     var sampleResNos = activeTab === 'tab-nos' ? findPath('N1', true) : null;
@@ -823,7 +838,9 @@
 
       // interactive:false faz o clique "atravessar" o marcador e chegar até o mapa —
       // é isso que permite clicar em cima de um nó para bloqueá-lo, por exemplo.
-      L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(nodesLayer);
+      var nodeMarker = L.marker([p.lat, p.lng], { icon: icon, interactive: true }).addTo(nodesLayer);
+      nodeMarker.bindTooltip('<strong>' + n.name + '</strong><br>' + (n.type === 'exit' ? 'Saída segura' : n.type === 'blocked' ? 'Bloqueado / risco' : 'Cruzamento'), { direction: 'top' });
+      nodeMarker.on('click', function () { addLog('Nó selecionado: ' + n.name); });
     });
 
     // Desenha os agentes (pessoas evacuando) em tempo real nas ruas do Leaflet
@@ -1107,11 +1124,14 @@
           iconSize: [11, 11],
           iconAnchor: [5.5, 5.5]
         });
-        var marker = L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(agentsLayer);
+        var marker = L.marker([p.lat, p.lng], { icon: icon, interactive: true }).addTo(agentsLayer);
+        marker.bindTooltip('Pessoa #' + ag.id + '<br>Estado: ' + (ag.evacuated ? 'evacuada' : isRunning ? 'em movimento' : 'aguardando') + '<br>Velocidade: ' + (ag.speed || 1).toFixed(2) + 'x', { direction: 'top', offset: [0, -6] });
+        marker.on('click', function () { addLog('Pessoa #' + ag.id + ' selecionada'); });
         agentMarkersMap.set(ag.id, marker);
       } else {
         var marker = agentMarkersMap.get(ag.id);
         marker.setLatLng([p.lat, p.lng]);
+        marker.setTooltipContent('Pessoa #' + ag.id + '<br>Estado: ' + (isRunning ? 'em movimento' : 'aguardando') + '<br>Velocidade: ' + (ag.speed || 1).toFixed(2) + 'x');
 
         var el = marker.getElement();
         if (el) {
@@ -1373,12 +1393,16 @@
       }
       totalAgentes += 1;
       var snap = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
-      var newAgent = createAgent(totalAgentes, snap.fromNodeId);
-      newAgent.lat = snap.lat;
-      newAgent.lng = snap.lng;
-      newAgent.x = snap.x;
-      newAgent.y = snap.y;
-      newAgent.segmentProgress = snap.progress;
+      // O agente entra pelo cruzamento mais próximo da rua clicada. Assim
+      // a posição e o primeiro segmento da rota sempre coincidem.
+      var snappedNodeId = snap.progress < 0.5 ? snap.fromNodeId : snap.toNodeId;
+      var snappedNode = getNode(snappedNodeId);
+      var newAgent = createAgent(totalAgentes, snappedNodeId);
+      newAgent.lat = safeNodeLatLng(snappedNode).lat;
+      newAgent.lng = safeNodeLatLng(snappedNode).lng;
+      newAgent.x = snappedNode.x;
+      newAgent.y = snappedNode.y;
+      newAgent.segmentProgress = 0;
       agents.push(newAgent);
 
       fieldAgentes.textContent = totalAgentes;
