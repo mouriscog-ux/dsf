@@ -794,7 +794,9 @@
     streetsLayer.clearLayers();
     nodesLayer.clearLayers();
     routesLayer.clearLayers();
-    agentsLayer.clearLayers();
+    // Mantém a camada e o registro dos marcadores sincronizados antes de redesenhar.
+    // Limpar somente a camada faria o Map ainda apontar para ícones já removidos.
+    clearAgentMarkers();
 
     // Desenhos traçados de ruas e rotas sobre o mapa foram removidos
     // para exibir o mapa limpo com marcadores e agentes.
