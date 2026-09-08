@@ -292,10 +292,10 @@
     edges.forEach(function (e) {
       if (e.from === nodeId) {
         var target = getNode(e.to);
-        if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
+        if (target && target.type !== 'blocked' && !e.blocked) list.push({ node: target, weight: roadCost(e) });
       } else if (e.to === nodeId) {
         var target = getNode(e.from);
-        if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
+        if (target && target.type !== 'blocked' && !e.blocked) list.push({ node: target, weight: roadCost(e) });
       }
     });
     return list;
@@ -345,7 +345,8 @@
   }
 
   function getDynamicWeight(currentId, neighborId, baseWeight) {
-    return baseWeight + getFireEdgePenalty(getNode(currentId), getNode(neighborId));
+    var e = edgeBetween(currentId, neighborId);
+    return e ? roadCost(e) : baseWeight + getFireEdgePenalty(getNode(currentId), getNode(neighborId));
   }
 
   function distance(nodeA, nodeB) {
@@ -464,6 +465,53 @@
 
   var tickTimer = null;
   var agents = [];
+  var routeRecalculations = 0;
+  var riskPeople = 0;
+  var trappedPeople = 0;
+  var avgDistance = 0;
+  var avgEvacuationTime = 0;
+  var congestionLevel = 0;
+  var exploredAstarTotal = 0;
+  var exploredDijkstraTotal = 0;
+
+  function ensureEdgeState() {
+    edges.forEach(function (e) {
+      if (!Number.isFinite(e.congestion)) e.congestion = 0;
+      if (!Number.isFinite(e.risk)) e.risk = 0;
+      if (!Number.isFinite(e.capacity)) e.capacity = Math.max(4, Math.round(e.weight / 22));
+      if (typeof e.blocked !== 'boolean') e.blocked = false;
+    });
+  }
+
+  function edgeBetween(a, b) {
+    return edges.find(function (e) { return (e.from === a && e.to === b) || (e.from === b && e.to === a); });
+  }
+
+  function roadCost(e) {
+    if (!e || e.blocked) return Infinity;
+    var loadRatio = e.congestion / Math.max(1, e.capacity);
+    return e.weight * (1 + loadRatio * loadRatio * 2.5) + (e.risk || 0) * 2.2;
+  }
+
+  function updateDynamicRoadState() {
+    ensureEdgeState();
+    edges.forEach(function (e) { e.congestion = 0; });
+    agents.forEach(function (ag) {
+      if (ag.evacuated || !ag.path || ag.pathIndex >= ag.path.length - 1) return;
+      var e = edgeBetween(ag.path[ag.pathIndex], ag.path[ag.pathIndex + 1]);
+      if (e) e.congestion += 1;
+    });
+    var totalCapacity = 0, totalLoad = 0;
+    edges.forEach(function (e) {
+      var a = getNode(e.from), b = getNode(e.to);
+      var danger = a && b ? getFireEdgePenalty(a, b) / 45 : 0;
+      e.risk = Math.min(100, danger * 25);
+      if (e.risk >= 88) e.blocked = true;
+      totalCapacity += e.capacity;
+      totalLoad += e.congestion;
+    });
+    congestionLevel = totalCapacity ? Math.min(100, totalLoad / totalCapacity * 100) : 0;
+  }
 
   function measurePath(startId, useHeuristic) {
     var t0 = performance.now();
@@ -572,7 +620,11 @@
         segmentProgress: 0,
         x: randNode.x,
         y: randNode.y,
-        evacuated: false
+        evacuated: false,
+        speed: 0.72 + Math.random() * 0.62,
+        distanceTravelled: 0,
+        evacuationTime: 0,
+        reroutes: 0
       };
     }
 
@@ -601,7 +653,11 @@
       lng: posLng,
       x: posX,
       y: posY,
-      evacuated: false
+      evacuated: false,
+      speed: 0.72 + Math.random() * 0.62,
+      distanceTravelled: 0,
+      evacuationTime: 0,
+      reroutes: 0
     };
   }
 
@@ -628,6 +684,7 @@
   }
 
   function recalculateAllAgentPaths() {
+    updateDynamicRoadState();
     var totalExploredSum = 0;
     var totalCostSum = 0;
     var validCount = 0;
@@ -636,12 +693,17 @@
       if (ag.evacuated) return;
       var res = findPath(ag.currentNodeId, true);
       if (res && res.path.length > 0) {
+        if (ag.path && ag.path.join(',') !== res.path.join(',')) {
+          ag.reroutes = (ag.reroutes || 0) + 1;
+          routeRecalculations++;
+        }
         ag.path = res.path;
         ag.pathIndex = 0;
         ag.segmentProgress = 0;
         totalExploredSum += res.nodesExplored;
         totalCostSum += res.cost;
         validCount++;
+        exploredAstarTotal += res.nodesExplored;
       }
     });
 
@@ -650,6 +712,7 @@
       statCusto.textContent = (totalCostSum / validCount).toFixed(1);
     }
     updateFireComparison(validCount > 0 ? agents[0].currentNodeId : 'N1');
+    if (validCount > 0) exploredDijkstraTotal += measurePath(agents[0].currentNodeId, false).nodesExplored;
   }
 
   function forceRecalculateForFire(nodeId) {
@@ -916,6 +979,18 @@
     statEvacuados.textContent = evacuados;
     statTotal.textContent = totalAgentes;
     statTempo.textContent = formatTime(elapsedSeconds);
+    var active = agents.filter(function (a) { return !a.evacuated; });
+    riskPeople = active.filter(function (a) {
+      var node = getNode(a.currentNodeId);
+      return node && getFireDangerAtNode(node) > 0;
+    }).length;
+    trappedPeople = active.filter(function (a) { return !a.path || a.path.length < 2; }).length;
+    var distanceSum = agents.reduce(function (sum, a) { return sum + (a.distanceTravelled || 0); }, 0);
+    avgDistance = agents.length ? distanceSum / agents.length : 0;
+    var evacuatedTimes = agents.filter(function (a) { return a.evacuated && a.evacuationTime; });
+    avgEvacuationTime = evacuatedTimes.length ? evacuatedTimes.reduce(function (s, a) { return s + a.evacuationTime; }, 0) / evacuatedTimes.length : 0;
+    statNos.textContent = exploredAstarTotal ? Math.round(exploredAstarTotal / Math.max(1, routeRecalculations)) : '—';
+    statCusto.textContent = congestionLevel.toFixed(0) + '% fluxo';
   }
 
   var evacHistory = [];
@@ -1059,10 +1134,15 @@
     if (dt > 0.1) dt = 0.1;
 
     if (state === STATE.RUNNING) {
-      var stepRate = 0.08 * speed * dt;
+      updateDynamicRoadState();
 
       agents.forEach(function (ag) {
         if (ag.evacuated) return;
+        ag.evacuationTime = elapsedSeconds;
+        var edge = ag.path && ag.pathIndex < ag.path.length - 1 ? edgeBetween(ag.path[ag.pathIndex], ag.path[ag.pathIndex + 1]) : null;
+        var congestionSlowdown = edge ? Math.max(0.28, 1 - (edge.congestion / Math.max(1, edge.capacity)) * 0.58) : 1;
+        var riskSlowdown = edge ? Math.max(0.2, 1 - (edge.risk || 0) / 160) : 1;
+        var stepRate = 0.08 * speed * ag.speed * congestionSlowdown * riskSlowdown * dt;
 
         if (!ag.path || ag.path.length <= 1 || ag.pathIndex >= ag.path.length - 1) {
           var nEvac = getNode(ag.currentNodeId);
@@ -1082,6 +1162,7 @@
         }
 
         ag.segmentProgress += stepRate;
+        if (edge) ag.distanceTravelled += edge.weight * stepRate;
         if (ag.segmentProgress >= 1) {
           ag.segmentProgress = 0;
           ag.pathIndex++;
@@ -1182,6 +1263,14 @@
     nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
     edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
     activeFires = [];
+    routeRecalculations = 0;
+    riskPeople = 0;
+    trappedPeople = 0;
+    avgDistance = 0;
+    avgEvacuationTime = 0;
+    congestionLevel = 0;
+    exploredAstarTotal = 0;
+    exploredDijkstraTotal = 0;
     lastFireComparison = null;
     totalAgentes = 50;
 
