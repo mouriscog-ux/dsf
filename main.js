@@ -577,6 +577,21 @@
     return bestPoint;
   }
 
+  function nearestGraphEdge(x, y) {
+    var best = null;
+    edges.forEach(function (e) {
+      var a = getNode(e.from), b = getNode(e.to);
+      if (!a || !b) return;
+      var dx = b.x - a.x, dy = b.y - a.y;
+      var lenSq = dx * dx + dy * dy || 1;
+      var t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lenSq));
+      var px = a.x + t * dx, py = a.y + t * dy;
+      var d = Math.hypot(x - px, y - py);
+      if (!best || d < best.distance) best = { edge: e, distance: d, x: px, y: py };
+    });
+    return best;
+  }
+
   function randomizeExits() {
     nodes.forEach(function (n) {
       if (n.type !== 'blocked') n.type = 'normal';
@@ -685,13 +700,14 @@
       if (ag.evacuated) return;
       var res = findPath(ag.currentNodeId, true);
       if (res && res.path.length > 0) {
-        if (ag.path && ag.path.join(',') !== res.path.join(',')) {
+        var sameRoute = ag.path && ag.path.slice(ag.pathIndex || 0).join(',') === res.path.join(',');
+        if (!sameRoute) {
           ag.reroutes = (ag.reroutes || 0) + 1;
           routeRecalculations++;
+          ag.pathIndex = 0;
+          ag.segmentProgress = 0;
         }
         ag.path = res.path;
-        ag.pathIndex = 0;
-        ag.segmentProgress = 0;
         totalExploredSum += res.nodesExplored;
         totalCostSum += res.cost;
         validCount++;
@@ -721,6 +737,12 @@
   }
 
   async function recalculateAllAgentPathsAsync() {
+    // A decisão deve usar o mesmo grafo dinâmico exibido no mapa. O endpoint
+    // legado não conhece congestionamento/riscos transitórios e reiniciava o
+    // progresso dos agentes, produzindo teletransportes a cada tick.
+    recalculateAllAgentPaths();
+    return;
+
     var activeAgents = agents.filter(function (ag) { return !ag.evacuated; });
     if (activeAgents.length === 0) return;
 
@@ -1239,6 +1261,8 @@
       spreadFire();
     }
     await recalculateAllAgentPathsAsync();
+    updateDynamicRoadState();
+    renderGraph();
     pushChartPoint();
   }
 
@@ -1351,6 +1375,22 @@
     var y = xy.y;
 
     if (activeTool === 'bloqueio') {
+      var streetHit = nearestGraphEdge(x, y);
+      if (streetHit && streetHit.distance < 22) {
+        streetHit.edge.blocked = true;
+        var streetFire = {
+          nodeId: 'edge-' + streetHit.edge.from + '-' + streetHit.edge.to,
+          x: streetHit.x, y: streetHit.y,
+          radius: 30 + (fireIntensityInput ? parseFloat(fireIntensityInput.value) : 2) * 15,
+          intensity: fireIntensityInput ? parseFloat(fireIntensityInput.value) : 2,
+          spread: fireSpreadInput ? parseFloat(fireSpreadInput.value) : 1
+        };
+        activeFires.push(streetFire);
+        addLog('<span class="warn">RUA BLOQUEADA: ' + (streetHit.edge.name || 'conexão do grafo').toUpperCase() + '</span>');
+        recalculateAllAgentPaths();
+        renderGraph();
+        return;
+      }
       var closest = null;
       var minDist = Infinity;
       nodes.forEach(function (n) {
@@ -1369,6 +1409,14 @@
       await recalculateAllAgentPathsAsync();
 
     } else if (activeTool === 'saida') {
+      var existingExit = nodes.find(function (n) { return n.type === 'exit' && Math.hypot(n.x - x, n.y - y) < 24; });
+      if (existingExit) {
+        existingExit.type = 'normal';
+        addLog('<span class="warn">Saída segura removida: ' + existingExit.name + '</span>');
+        recalculateAllAgentPaths();
+        renderGraph();
+        return;
+      }
       var newExitId = 'NE' + (nodes.length + 1);
       nodes.push({ id: newExitId, name: 'Nova Saída (' + Math.round(x) + ',' + Math.round(y) + ')', x: x, y: y, type: 'exit' });
 
