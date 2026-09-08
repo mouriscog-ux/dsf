@@ -451,7 +451,7 @@ button.nav-btn.tutorial-trigger:hover {
 /* ---- MAIN GRID ---- */
 .main-grid {
   display: grid;
-  grid-template-columns: 230px minmax(620px, 1fr) 260px;
+  grid-template-columns: 270px 1fr 300px;
   gap: 18px;
 }
 
@@ -631,7 +631,7 @@ button.nav-btn.tutorial-trigger:hover {
 .map-canvas {
   position: relative;
   flex: 1;
-  min-height: 620px;
+  min-height: 450px;
   margin: 14px;
   border-radius: var(--radius-lg);
   background: radial-gradient(circle at 40% 30%, #151d2a 0%, #0c111c 80%);
@@ -649,7 +649,7 @@ button.nav-btn.tutorial-trigger:hover {
   background: #0c111c; /* evita "flash" branco enquanto os tiles carregam */
 }
 /* Deixa os tiles do OSM com a estética escura do painel (efeito HUD) */
-#leaflet-map .leaflet-tile-pane { filter: saturate(0.35) brightness(0.52) contrast(1.08) hue-rotate(180deg) invert(1); opacity: 0.38; }
+#leaflet-map .leaflet-tile-pane { filter: saturate(0.75) brightness(0.75) contrast(1.05) hue-rotate(180deg) invert(1); }
 #leaflet-map .leaflet-control-attribution {
   background: rgba(9, 13, 22, 0.75); color: var(--text-muted);
   font-size: 9.5px;

@@ -217,24 +217,11 @@
 
   // Camadas redesenhadas a cada frame da simulação
   var streetsLayer  = L.layerGroup().addTo(leafletMap); // arestas do grafo (ruas)
-  var urbanLayer    = L.layerGroup().addTo(leafletMap); // quarteiroes, predios e calcadas
   var nodesLayer     = L.layerGroup().addTo(leafletMap); // cruzamentos / saídas / bloqueios
   var routesLayer    = L.layerGroup().addTo(leafletMap); // rotas calculadas pelo A*
   var agentsLayer    = L.layerGroup().addTo(leafletMap); // pessoas em evacuação
   var costTagsLayer  = L.layerGroup().addTo(leafletMap); // rótulos f(n)/g(n)/h(n)
   var landmarksLayer = L.layerGroup().addTo(leafletMap); // marcos turísticos (estáticos)
-
-  var URBAN_BLOCKS = [
-    { id: 'B1', name: 'Quadra Norte', points: [[45,42],[125,42],[125,78],[78,78],[58,98],[45,98]] },
-    { id: 'B2', name: 'Quadra Galvao', points: [[155,42],[285,42],[285,82],[215,82],[155,72]] },
-    { id: 'B3', name: 'Quadra Metro', points: [[300,42],[435,42],[435,105],[365,105],[330,82],[300,82]] },
-    { id: 'B4', name: 'Quadra Estudantes', points: [[45,120],[112,120],[112,190],[45,210]] },
-    { id: 'B5', name: 'Quadra Central', points: [[235,112],[330,112],[330,160],[285,160],[270,185],[235,175]] },
-    { id: 'B6', name: 'Quadra Leste', points: [[350,125],[435,125],[435,215],[365,215],[365,180],[350,170]] },
-    { id: 'B7', name: 'Quadra Gloria', points: [[45,225],[125,210],[150,250],[135,325],[45,345]] },
-    { id: 'B8', name: 'Quadra Sul', points: [[180,245],[255,245],[255,345],[165,345]] },
-    { id: 'B9', name: 'Quadra Conselheiro', points: [[300,245],[435,245],[435,345],[285,345]] }
-  ];
 
   /* ---------- 4. GRAFO REALISTA DO BAIRRO DA LIBERDADE ---------- */
   var INITIAL_NODES = [
@@ -317,7 +304,7 @@
   function getEdgeNameBetween(a, b) {
     for (var i = 0; i < edges.length; i++) {
       var e = edges[i];
-      if ((e.from === a && e.to === b) || (e.from === b && e.to === a)) return e.name || e.roadName || 'rota de evacuação';
+      if ((e.from === a && e.to === b) || (e.from === b && e.to === a)) return e.name;
     }
     return 'rota de evacuação';
   }
@@ -689,17 +676,16 @@
   }
 
   function getDynamicGraphPayload() {
-    var blockedIds = nodes
-      .filter(function (n) {
-        return n.type === 'blocked';
-      })
-      .map(function (n) {
-        return n.id;
-      });
-  
+    var baseNodeIds = new Set(INITIAL_NODES.map(function (n) { return n.id; }));
+    var baseEdgeKeys = new Set(INITIAL_EDGES.map(function (e) { return e.from + '-' + e.to; }));
+
+    var dynamicNodes = nodes.filter(function (n) { return !baseNodeIds.has(n.id) || n.type === 'blocked'; });
+    var dynamicEdges = edges.filter(function (e) { return !baseEdgeKeys.has(e.from + '-' + e.to); });
+    var blockedIds = nodes.filter(function (n) { return n.type === 'blocked'; }).map(function (n) { return n.id; });
+
     return {
-      dynamicNodes: nodes,
-      dynamicEdges: edges,
+      dynamicNodes: dynamicNodes,
+      dynamicEdges: dynamicEdges,
       blockedIds: blockedIds
     };
   }
@@ -813,36 +799,11 @@
   }
 
   /* ---------- 7. DESENHO DO MAPA REAL (LEAFLET) E OVERLAYS ---------- */
-  function renderUrbanDistrict() {
-    urbanLayer.clearLayers();
-    URBAN_BLOCKS.forEach(function (block, index) {
-      var polygon = block.points.map(function (point) { return xyToLatLng(point[0], point[1]); });
-      var area = L.polygon(polygon, {
-        color: index % 2 ? '#718096' : '#5d6878',
-        weight: 1.2,
-        opacity: 0.75,
-        fillColor: index % 2 ? '#293342' : '#252d3b',
-        fillOpacity: 0.88,
-        interactive: true
-      }).addTo(urbanLayer);
-      area.bindTooltip('<strong>' + block.name + '</strong><br>Area urbana / edificios', { sticky: true });
-
-      // Pequenos volumes internos deixam o quarteirao legivel sem virar ruido.
-      var centroid = block.points.reduce(function (acc, p) { return [acc[0] + p[0], acc[1] + p[1]]; }, [0, 0]);
-      centroid[0] /= block.points.length; centroid[1] /= block.points.length;
-      var building = L.rectangle([
-        xyToLatLng(centroid[0] - 12, centroid[1] - 9),
-        xyToLatLng(centroid[0] + 12, centroid[1] + 9)
-      ], { color: '#8994a5', weight: 1, opacity: 0.28, fillColor: '#101722', fillOpacity: 0.45, interactive: false }).addTo(urbanLayer);
-    });
-  }
-
   function renderGraph() {
     streetsLayer.clearLayers();
     nodesLayer.clearLayers();
     routesLayer.clearLayers();
     agentsLayer.clearLayers();
-    renderUrbanDistrict();
 
     // A malha do grafo fica visível para que o usuário entenda por onde
     // os agentes realmente podem andar.
@@ -851,22 +812,11 @@
       if (!from || !to) return;
       var risk = e.risk || 0;
       var color = e.blocked ? '#ff4d2e' : risk >= 60 ? '#ff9f1c' : (e.congestion > e.capacity ? '#eab308' : '#42d6c5');
-      var streetWidth = e.name && (e.name.indexOf('Av.') >= 0 || e.name.indexOf('Galvão') >= 0) ? 13 : 9;
-      var sidewalk = L.polyline([safeNodeLatLng(from), safeNodeLatLng(to)], {
-        color: e.blocked ? '#7d2d28' : '#8c929b', weight: streetWidth + 5, opacity: 0.8,
-        lineCap: 'butt', dashArray: e.blocked ? '10 8' : null
-      }).addTo(streetsLayer);
       var line = L.polyline([safeNodeLatLng(from), safeNodeLatLng(to)], {
-        color: e.blocked ? '#f04f3c' : '#303947', weight: streetWidth,
-        opacity: 0.96, lineCap: 'butt'
-      }).addTo(streetsLayer);
-      var center = L.polyline([safeNodeLatLng(from), safeNodeLatLng(to)], {
-        color: color, weight: e.blocked ? 3 : 1.5, opacity: 0.9,
-        dashArray: e.blocked ? '7 7' : (streetWidth > 10 ? '10 10' : null), lineCap: 'butt'
+        color: color, weight: e.blocked ? 6 : 3 + Math.min(4, (e.congestion || 0) / 4),
+        opacity: 0.78, dashArray: e.blocked ? '8 7' : null
       }).addTo(streetsLayer);
       line.bindTooltip('<strong>' + (e.name || 'Rua') + '</strong><br>Fluxo: ' + (e.congestion || 0) + '/' + e.capacity + '<br>Risco: ' + Math.round(risk) + '%', { sticky: true });
-      sidewalk.bindTooltip('<strong>' + (e.name || 'Rua') + '</strong><br>Distancia: ' + e.weight + ' m<br>Custo A*: ' + Math.round(roadCost(e)), { sticky: true });
-      line.on('click', function () { addLog('Rua selecionada: ' + (e.name || 'Rua') + ' · custo A*: ' + Math.round(roadCost(e))); });
     });
 
     var routeKeys = new Set();
@@ -900,7 +850,7 @@
         else if (dijkResComp && dijkResComp.closedSet.indexOf(n.id) !== -1) classes.push('dijkstra-visited');
       }
 
-      var p = safeNodeLatLng(n);
+      var p = xyToLatLng(n.x, n.y);
       var icon = L.divIcon({
         className: '',
         html: '<div class="' + classes.join(' ') + '" title="' + n.name.replace(/"/g, '&quot;') + '"></div>',
@@ -926,11 +876,6 @@
     costTagsLayer.clearLayers();
     activeFires.forEach(function (fire) {
       var p = xyToLatLng(fire.x, fire.y);
-      L.circle([p.lat, p.lng], {
-        radius: Math.max(22, fire.radius * 4.1),
-        color: '#ff5a36', weight: 2, opacity: 0.8,
-        fillColor: '#ff3d1f', fillOpacity: 0.16, interactive: true
-      }).bindTooltip('<strong>Area de risco</strong><br>Intensidade: ' + fire.intensity.toFixed(1) + '<br>Ruas afetadas recalculam o custo').addTo(costTagsLayer);
       var icon = L.divIcon({
         className: '',
         html: '<div class="fire-zone" style="width:' + (fire.radius * 2) + 'px;height:' + (fire.radius * 2) + 'px;"></div>',
@@ -1623,33 +1568,11 @@
       if (response.ok) {
         var data = await response.json();
         if (data && data.nodes && data.edges) {
-
-          INITIAL_NODES = data.nodes.map(function (node) {
-            var xy = latLngToXY(node.lat, node.lng);
-        
-            return {
-              ...node,
-              x: xy.x,
-              y: xy.y,
-              name: node.name || ('Rua / nó OSM ' + node.osmId)
-            };
-          });
-        
-          INITIAL_EDGES = data.edges.map(function (edge) {
-            return {
-              ...edge,
-              name: edge.roadName || edge.name || 'Rua'
-            };
-          });
-        
+          INITIAL_NODES = data.nodes;
+          INITIAL_EDGES = data.edges;
           nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
           edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
-        
-          addLog(
-            'Grafo real do OpenStreetMap carregado: ' +
-            nodes.length + ' nós e ' +
-            edges.length + ' arestas'
-          );
+          addLog('Grafo do bairro carregado via API (/api/graph)');
         }
       }
     } catch (e) {
