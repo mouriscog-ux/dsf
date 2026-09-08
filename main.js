@@ -317,7 +317,7 @@
   function getEdgeNameBetween(a, b) {
     for (var i = 0; i < edges.length; i++) {
       var e = edges[i];
-      if ((e.from === a && e.to === b) || (e.from === b && e.to === a)) return e.name;
+      if ((e.from === a && e.to === b) || (e.from === b && e.to === a)) return e.name || e.roadName || 'rota de evacuação';
     }
     return 'rota de evacuação';
   }
@@ -689,16 +689,17 @@
   }
 
   function getDynamicGraphPayload() {
-    var baseNodeIds = new Set(INITIAL_NODES.map(function (n) { return n.id; }));
-    var baseEdgeKeys = new Set(INITIAL_EDGES.map(function (e) { return e.from + '-' + e.to; }));
-
-    var dynamicNodes = nodes.filter(function (n) { return !baseNodeIds.has(n.id) || n.type === 'blocked'; });
-    var dynamicEdges = edges.filter(function (e) { return !baseEdgeKeys.has(e.from + '-' + e.to); });
-    var blockedIds = nodes.filter(function (n) { return n.type === 'blocked'; }).map(function (n) { return n.id; });
-
+    var blockedIds = nodes
+      .filter(function (n) {
+        return n.type === 'blocked';
+      })
+      .map(function (n) {
+        return n.id;
+      });
+  
     return {
-      dynamicNodes: dynamicNodes,
-      dynamicEdges: dynamicEdges,
+      dynamicNodes: nodes,
+      dynamicEdges: edges,
       blockedIds: blockedIds
     };
   }
@@ -899,7 +900,7 @@
         else if (dijkResComp && dijkResComp.closedSet.indexOf(n.id) !== -1) classes.push('dijkstra-visited');
       }
 
-      var p = xyToLatLng(n.x, n.y);
+      var p = safeNodeLatLng(n);
       var icon = L.divIcon({
         className: '',
         html: '<div class="' + classes.join(' ') + '" title="' + n.name.replace(/"/g, '&quot;') + '"></div>',
@@ -1622,11 +1623,33 @@
       if (response.ok) {
         var data = await response.json();
         if (data && data.nodes && data.edges) {
-          INITIAL_NODES = data.nodes;
-          INITIAL_EDGES = data.edges;
+
+          INITIAL_NODES = data.nodes.map(function (node) {
+            var xy = latLngToXY(node.lat, node.lng);
+        
+            return {
+              ...node,
+              x: xy.x,
+              y: xy.y,
+              name: node.name || ('Rua / nó OSM ' + node.osmId)
+            };
+          });
+        
+          INITIAL_EDGES = data.edges.map(function (edge) {
+            return {
+              ...edge,
+              name: edge.roadName || edge.name || 'Rua'
+            };
+          });
+        
           nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
           edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
-          addLog('Grafo do bairro carregado via API (/api/graph)');
+        
+          addLog(
+            'Grafo real do OpenStreetMap carregado: ' +
+            nodes.length + ' nós e ' +
+            edges.length + ' arestas'
+          );
         }
       }
     } catch (e) {

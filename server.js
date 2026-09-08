@@ -53,8 +53,10 @@ function buildGraph(dynamicNodes = [], dynamicEdges = [], blockedIds = []) {
     const nTo = nodesMap.get(e.to);
     if (!nFrom || !nTo || nFrom.type === 'blocked' || nTo.type === 'blocked') return;
 
-    adj.get(e.from).push({ node: e.to, weight: e.weight });
-    adj.get(e.to).push({ node: e.from, weight: e.weight });
+    adj.get(e.from).push({
+      node: e.to,
+      weight: e.weight
+    });
   });
 
   return { nodesMap, adj, exitNodes, allNodes };
@@ -175,85 +177,157 @@ async function fetchOSMData(south, west, north, east) {
       way["building"](${south},${west},${north},${east});
     );
 
-    out geom;
+    out body;
+    >;
+    out skel qt;
   `;
 
   const response = await fetch(
     "https://overpass-api.de/api/interpreter",
     {
       method: "POST",
+      headers: {
+        "Content-Type": "text/plain"
+      },
       body: query
     }
   );
 
   if (!response.ok) {
-    throw new Error(`Overpass API error: ${response.status}`);
+    throw new Error(
+      `Overpass API error: ${response.status}`
+    );
   }
 
   return await response.json();
 }
 
 function processOSMData(data) {
+
+  const osmNodes = new Map();
+
   const roads = [];
   const buildings = [];
 
   for (const element of data.elements || []) {
 
-    if (element.tags?.highway && element.geometry) {
-      roads.push({
-        id: `road_${element.id}`,
-        type: element.tags.highway,
-        name: element.tags.name || "Sem nome",
-        geometry: element.geometry
+    if (element.type === "node") {
+
+      osmNodes.set(element.id, {
+        id: element.id,
+        lat: element.lat,
+        lng: element.lon
       });
+
     }
 
-    if (element.tags?.building && element.geometry) {
+  }
+
+  for (const element of data.elements || []) {
+
+    if (element.type === "way" && element.tags?.highway) {
+
+      roads.push({
+        id: `road_${element.id}`,
+        osmId: element.id,
+        type: element.tags.highway,
+        name: element.tags.name || "Sem nome",
+
+        nodes: element.nodes || [],
+
+        oneway:
+          element.tags.oneway === "yes" ||
+          element.tags.oneway === "1",
+
+        reverse:
+          element.tags.oneway === "-1"
+      });
+
+    }
+
+    if (element.type === "way" && element.tags?.building) {
+
       buildings.push({
         id: `building_${element.id}`,
         type: element.tags.building,
-        geometry: element.geometry
+        name: element.tags.name || "Sem nome",
+
+        nodes: element.nodes || []
       });
+
     }
+
   }
 
-  const graph = createGraphFromRoads(roads);
+  const graph = createGraphFromRoads(
+    roads,
+    osmNodes
+  );
+
+  const formattedBuildings = buildings.map(function (building) {
+
+    return {
+      id: building.id,
+      type: building.type,
+      name: building.name,
+
+      geometry: building.nodes
+        .map(function (nodeId) {
+
+          const node = osmNodes.get(nodeId);
+
+          if (!node) return null;
+
+          return {
+            lat: node.lat,
+            lon: node.lng
+          };
+
+        })
+        .filter(Boolean)
+    };
+
+  });
 
   return {
     roads,
-    buildings,
+    buildings: formattedBuildings,
     nodes: graph.nodes,
     edges: graph.edges
   };
+
 }
 
-
-function createGraphFromRoads(roads) {
+function createGraphFromRoads(roads, osmNodes) {
   const nodes = [];
   const edges = [];
 
   const nodeMap = new Map();
+  const edgeMap = new Map();
 
-  function getNodeId(lat, lng) {
-    return `node_${lat.toFixed(7)}_${lng.toFixed(7)}`;
-  }
+  function getOrCreateNode(osmNodeId) {
+    const osmNode = osmNodes.get(osmNodeId);
 
-  function getOrCreateNode(lat, lng) {
-    const id = getNodeId(lat, lng);
+    if (!osmNode) {
+      return null;
+    }
 
-    if (!nodeMap.has(id)) {
+    const graphNodeId = `node_${osmNodeId}`;
+
+    if (!nodeMap.has(graphNodeId)) {
       const node = {
-        id,
-        lat,
-        lng,
+        id: graphNodeId,
+        osmId: osmNodeId,
+        lat: osmNode.lat,
+        lng: osmNode.lng,
         type: "road"
       };
 
-      nodeMap.set(id, node);
+      nodeMap.set(graphNodeId, node);
       nodes.push(node);
     }
 
-    return nodeMap.get(id);
+    return nodeMap.get(graphNodeId);
   }
 
   function distanceBetween(a, b) {
@@ -274,44 +348,49 @@ function createGraphFromRoads(roads) {
     return 2 * R * Math.asin(Math.sqrt(h));
   }
 
-  for (const road of roads) {
+  function addEdge(from, to, weight, road) {
+    if (!from || !to) return;
+    if (from.id === to.id) return;
 
-    if (!road.geometry || road.geometry.length < 2) {
+    const edgeId = `${from.id}->${to.id}`;
+
+    if (edgeMap.has(edgeId)) return;
+
+    const edge = {
+      from: from.id,
+      to: to.id,
+      weight: weight,
+      roadId: road.id,
+      roadName: road.name,
+      highwayType: road.type
+    };
+
+    edgeMap.set(edgeId, edge);
+    edges.push(edge);
+  }
+
+  for (const road of roads) {
+    if (!road.nodes || road.nodes.length < 2) {
       continue;
     }
 
-    for (let i = 0; i < road.geometry.length - 1; i++) {
+    for (let i = 0; i < road.nodes.length - 1; i++) {
+      const nodeA = getOrCreateNode(road.nodes[i]);
+      const nodeB = getOrCreateNode(road.nodes[i + 1]);
 
-      const pointA = road.geometry[i];
-      const pointB = road.geometry[i + 1];
+      if (!nodeA || !nodeB) {
+        continue;
+      }
 
-      const nodeA = getOrCreateNode(
-        pointA.lat,
-        pointA.lon
-      );
+      const weight = distanceBetween(nodeA, nodeB);
 
-      const nodeB = getOrCreateNode(
-        pointB.lat,
-        pointB.lon
-      );
-
-      const weight = distanceBetween(
-        nodeA,
-        nodeB
-      );
-
-      edges.push({
-        from: nodeA.id,
-        to: nodeB.id,
-        weight
-      });
-
-      if (road.type !== "motorway") {
-        edges.push({
-          from: nodeB.id,
-          to: nodeA.id,
-          weight
-        });
+      if (!road.oneway) {
+        addEdge(nodeA, nodeB, weight, road);
+        addEdge(nodeB, nodeA, weight, road);
+      } else if (!road.reverse) {
+        addEdge(nodeA, nodeB, weight, road);
+      } else {
+        addEdge(nodeB, nodeA, weight, road);
       }
     }
   }
@@ -532,5 +611,4 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`[SmartEvac] Servidor rodando em http://localhost:${PORT}`);
-});
-
+})
