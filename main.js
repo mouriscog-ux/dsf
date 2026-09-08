@@ -293,7 +293,10 @@
       if (e.from === nodeId) {
         var target = getNode(e.to);
         if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
-      } else if (e.to === nodeId) {
+      // As arestas vindas do OSM já carregam os dois sentidos quando a rua
+      // permite tráfego nos dois sentidos. Não crie aqui o sentido inverso de
+      // uma via de mão única.
+      } else if (e.to === nodeId && !e.directed) {
         var target = getNode(e.from);
         if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
       }
@@ -553,42 +556,14 @@
   }
 
   function createAgent(id, startNodeId) {
-    var validEdges = edges.filter(function (e) {
-      var n1 = getNode(e.from);
-      var n2 = getNode(e.to);
-      return n1 && n2 && n1.type !== 'blocked' && n2.type !== 'blocked';
+    // Um agente só começa em um nó da malha viária. Antes ele nascia no meio
+    // de uma aresta, mas sua rota começava em outro nó; no primeiro frame isso
+    // criava um segmento em linha reta que podia atravessar prédios.
+    var normalNodes = nodes.filter(function (n) {
+      return n.type === 'normal' && getNeighbors(n.id).length > 0;
     });
-
-    if (validEdges.length === 0 || startNodeId) {
-      var normalNodes = nodes.filter(function (n) { return n.type === 'normal'; });
-      var randNode = getNode(startNodeId) || normalNodes[Math.floor(Math.random() * normalNodes.length)] || nodes[0];
-      var startId = randNode ? randNode.id : 'N1';
-      var res0 = findPath(startId, true);
-      return {
-        id: id,
-        currentNodeId: startId,
-        path: res0 ? res0.path : [startId],
-        pathIndex: 0,
-        segmentProgress: 0,
-        x: randNode.x,
-        y: randNode.y,
-        evacuated: false
-      };
-    }
-
-    var randEdge = validEdges[Math.floor(Math.random() * validEdges.length)];
-    var nFrom = getNode(randEdge.from);
-    var nTo = getNode(randEdge.to);
-    var t = Math.random();
-    var fromLatLng = safeNodeLatLng(nFrom);
-    var toLatLng = safeNodeLatLng(nTo);
-
-    var posLat = fromLatLng.lat + (toLatLng.lat - fromLatLng.lat) * t;
-    var posLng = fromLatLng.lng + (toLatLng.lng - fromLatLng.lng) * t;
-    var posX = nFrom.x + (nTo.x - nFrom.x) * t;
-    var posY = nFrom.y + (nTo.y - nFrom.y) * t;
-
-    var startId = t >= 0.5 ? randEdge.to : randEdge.from;
+    var randNode = getNode(startNodeId) || normalNodes[Math.floor(Math.random() * normalNodes.length)] || nodes[0];
+    var startId = randNode ? randNode.id : 'N1';
     var res = findPath(startId, true);
     var pos = safeNodeLatLng(randNode);
 
@@ -597,11 +572,11 @@
       currentNodeId: startId,
       path: res ? res.path : [startId],
       pathIndex: 0,
-      segmentProgress: t,
-      lat: posLat,
-      lng: posLng,
-      x: posX,
-      y: posY,
+      segmentProgress: 0,
+      lat: pos.lat,
+      lng: pos.lng,
+      x: randNode ? randNode.x : 0,
+      y: randNode ? randNode.y : 0,
       evacuated: false
     };
   }
