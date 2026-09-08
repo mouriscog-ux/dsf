@@ -799,37 +799,8 @@
     // Desenhos traçados de ruas e rotas sobre o mapa foram removidos
     // para exibir o mapa limpo com marcadores e agentes.
 
-    // Pré-calcula os resultados de busca usados para colorir os nós (evita recalcular por nó)
-    var sampleResNos = activeTab === 'tab-nos' ? findPath('N1', true) : null;
-    var astarResComp = activeTab === 'tab-comparar' ? findPath('N1', true) : null;
-    var dijkResComp  = activeTab === 'tab-comparar' ? findPath('N1', false) : null;
-
-    // Desenha os nós (cruzamentos / saídas / bloqueios) como marcadores reais
-    nodes.forEach(function (n) {
-      var classes = ['node'];
-      if (n.type !== 'normal') classes.push(n.type);
-      if (getFireDangerAtNode(n) > 0) classes.push('fire-active');
-
-      if (activeTab === 'tab-nos' && sampleResNos) {
-        if (sampleResNos.openSet.indexOf(n.id) !== -1) classes.push('open-set');
-        else if (sampleResNos.closedSet.indexOf(n.id) !== -1) classes.push('closed-set');
-      } else if (activeTab === 'tab-comparar') {
-        if (astarResComp && astarResComp.closedSet.indexOf(n.id) !== -1) classes.push('closed-set');
-        else if (dijkResComp && dijkResComp.closedSet.indexOf(n.id) !== -1) classes.push('dijkstra-visited');
-      }
-
-      var p = xyToLatLng(n.x, n.y);
-      var icon = L.divIcon({
-        className: '',
-        html: '<div class="' + classes.join(' ') + '" title="' + n.name.replace(/"/g, '&quot;') + '"></div>',
-        iconSize: [13, 13],
-        iconAnchor: [6.5, 6.5]
-      });
-
-      // interactive:false faz o clique "atravessar" o marcador e chegar até o mapa —
-      // é isso que permite clicar em cima de um nó para bloqueá-lo, por exemplo.
-      L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(nodesLayer);
-    });
+    // Os nós continuam no grafo e nos cálculos, mas não são renderizados no mapa.
+    // Assim, o clique chega diretamente ao mapa para as ferramentas de cenário.
 
     // Desenha os agentes (pessoas evacuando) em tempo real nas ruas do Leaflet
     updateAgentMarkers();
