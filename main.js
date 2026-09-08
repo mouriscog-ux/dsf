@@ -590,6 +590,7 @@
 
     var startId = t >= 0.5 ? randEdge.to : randEdge.from;
     var res = findPath(startId, true);
+    var pos = safeNodeLatLng(randNode);
 
     return {
       id: id,
@@ -613,16 +614,14 @@
   }
 
   function getDynamicGraphPayload() {
-    var baseNodeIds = new Set(INITIAL_NODES.map(function (n) { return n.id; }));
-    var baseEdgeKeys = new Set(INITIAL_EDGES.map(function (e) { return e.from + '-' + e.to; }));
-
-    var dynamicNodes = nodes.filter(function (n) { return !baseNodeIds.has(n.id) || n.type === 'blocked'; });
-    var dynamicEdges = edges.filter(function (e) { return !baseEdgeKeys.has(e.from + '-' + e.to); });
     var blockedIds = nodes.filter(function (n) { return n.type === 'blocked'; }).map(function (n) { return n.id; });
 
+    // O backend não mantém uma cópia do grafo. Portanto, depois de a API OSM
+    // substituir INITIAL_* pela malha real, enviar apenas o delta resulta em
+    // um grafo vazio no /api/pathfind-batch. Envie sempre o grafo atual inteiro.
     return {
-      dynamicNodes: dynamicNodes,
-      dynamicEdges: dynamicEdges,
+      dynamicNodes: nodes,
+      dynamicEdges: edges,
       blockedIds: blockedIds
     };
   }
@@ -663,6 +662,100 @@
       return 'http://localhost:8080' + endpoint;
     }
     return endpoint;
+  }
+
+  function normalizeApiGraph(graph) {
+    return {
+      nodes: graph.nodes.map(function (n) {
+        var copy = Object.assign({}, n);
+        var xy = latLngToXY(copy.lat, copy.lng);
+        copy.x = xy.x;
+        copy.y = xy.y;
+        copy.name = copy.name || 'Trecho de via';
+        return copy;
+      }),
+      edges: graph.edges
+    };
+  }
+
+  // GitHub Pages só hospeda os arquivos estáticos; portanto /api/graph não
+  // existe na versão publicada. Esta rota de contingência consulta o mesmo
+  // Overpass/OSM no navegador e monta uma malha dirigida por segmentos reais.
+  async function fetchGraphFromOverpass() {
+    var query = '[out:json];way["highway"](' +
+      GEO_BOUNDS.south + ',' + GEO_BOUNDS.west + ',' + GEO_BOUNDS.north + ',' + GEO_BOUNDS.east +
+      ');out body;>;out skel qt;';
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function () { controller.abort(); }, 12000);
+    var response;
+    try {
+      response = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: query,
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    if (!response.ok) throw new Error('Overpass respondeu ' + response.status);
+
+    var data = await response.json();
+    var osmNodes = new Map();
+    (data.elements || []).forEach(function (el) {
+      if (el.type === 'node') osmNodes.set(el.id, { id: el.id, lat: el.lat, lng: el.lon });
+    });
+
+    var graphNodes = new Map();
+    var graphEdges = [];
+    var edgeKeys = new Set();
+
+    function nodeFor(osmId, roadName) {
+      var osm = osmNodes.get(osmId);
+      if (!osm) return null;
+      var id = 'node_' + osmId;
+      if (!graphNodes.has(id)) {
+        graphNodes.set(id, { id: id, osmId: osmId, lat: osm.lat, lng: osm.lng, name: roadName || 'Trecho de via', type: 'normal' });
+      }
+      return graphNodes.get(id);
+    }
+
+    function addEdge(from, to, roadName, wayId) {
+      if (!from || !to || from.id === to.id) return;
+      var key = from.id + '->' + to.id;
+      if (edgeKeys.has(key)) return;
+      edgeKeys.add(key);
+      graphEdges.push({
+        from: from.id,
+        to: to.id,
+        weight: distance(from, to),
+        directed: true,
+        roadId: 'road_' + wayId,
+        roadName: roadName,
+        name: roadName
+      });
+    }
+
+    (data.elements || []).forEach(function (way) {
+      if (way.type !== 'way' || !way.tags || !way.tags.highway || !way.nodes || way.nodes.length < 2) return;
+      var roadName = way.tags.name || 'Via sem nome';
+      var oneWay = way.tags.oneway === 'yes' || way.tags.oneway === '1' || way.tags.oneway === '-1';
+      var reverse = way.tags.oneway === '-1';
+      for (var i = 0; i < way.nodes.length - 1; i++) {
+        var a = nodeFor(way.nodes[i], roadName);
+        var b = nodeFor(way.nodes[i + 1], roadName);
+        if (!oneWay) {
+          addEdge(a, b, roadName, way.id);
+          addEdge(b, a, roadName, way.id);
+        } else if (reverse) {
+          addEdge(b, a, roadName, way.id);
+        } else {
+          addEdge(a, b, roadName, way.id);
+        }
+      }
+    });
+
+    return { nodes: Array.from(graphNodes.values()), edges: graphEdges };
   }
 
   async function recalculateAllAgentPathsAsync() {
@@ -1284,12 +1377,10 @@
       }
       totalAgentes += 1;
       var snap = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
-      var newAgent = createAgent(totalAgentes, snap.fromNodeId);
-      newAgent.lat = snap.lat;
-      newAgent.lng = snap.lng;
-      newAgent.x = snap.x;
-      newAgent.y = snap.y;
-      newAgent.segmentProgress = snap.progress;
+      // O ponto clicado é associado ao extremo mais próximo da rua. Isso
+      // preserva a invariável de que todo movimento começa em uma aresta real.
+      var startId = snap.progress <= 0.5 ? snap.fromNodeId : snap.toNodeId;
+      var newAgent = createAgent(totalAgentes, startId);
       agents.push(newAgent);
 
       fieldAgentes.textContent = totalAgentes;
@@ -1394,6 +1485,7 @@
     window.addEventListener('resize', function () { leafletMap.invalidateSize(); });
     setTimeout(function () { leafletMap.invalidateSize(); }, 100);
 
+    var apiGraph = null;
     try {
       var response = await fetch(
         getApiUrl(
@@ -1407,15 +1499,30 @@
       if (response.ok) {
         var data = await response.json();
         if (data && data.nodes && data.edges) {
-          INITIAL_NODES = data.nodes;
-          INITIAL_EDGES = data.edges;
-          nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
-          edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
-          addLog('Grafo do bairro carregado via API (/api/graph)');
+          apiGraph = data;
         }
       }
     } catch (e) {
-      console.warn('Usando grafo estático inicial (fallback local)', e);
+      console.warn('API local indisponível; tentando Overpass diretamente', e);
+    }
+
+    if (!apiGraph) {
+      try {
+        apiGraph = await fetchGraphFromOverpass();
+        addLog('Grafo do bairro carregado diretamente do OpenStreetMap');
+      } catch (e) {
+        console.error('Não foi possível carregar a malha viária da API', e);
+        addLog('<span class="warn">API de ruas indisponível — usando mapa de contingência</span>');
+      }
+    }
+
+    if (apiGraph && apiGraph.nodes.length > 0 && apiGraph.edges.length > 0) {
+      var normalizedGraph = normalizeApiGraph(apiGraph);
+      INITIAL_NODES = normalizedGraph.nodes;
+      INITIAL_EDGES = normalizedGraph.edges;
+      nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
+      edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
+      addLog('Malha viária da API aplicada: ' + nodes.length + ' nós e ' + edges.length + ' segmentos');
     }
 
     applySpeed(1.5);
