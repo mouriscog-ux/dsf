@@ -116,7 +116,10 @@
   var chartXMid   = document.getElementById('chart-x-mid');
   var chartXEnd   = document.getElementById('chart-x-end');
 
-  var toolButtons = document.querySelectorAll('.tool-btn');
+  var toolButtons = document.querySelectorAll('.tool-btn, .map-tool');
+  var mapInspector = document.getElementById('map-inspector');
+  var mapToolButtons = document.querySelectorAll('.map-tool');
+  var appShell = document.querySelector('.app');
   var fireIntensityInput = document.getElementById('fire-intensity');
   var fireSpreadInput = document.getElementById('fire-spread');
   var fireIntensityLabel = document.getElementById('fire-intensity-label');
@@ -320,6 +323,26 @@
       if ((e.from === a && e.to === b) || (e.from === b && e.to === a)) return e.name;
     }
     return 'rota de evacuação';
+  }
+
+  function showInspector(title, body, kind) {
+    if (!mapInspector) return;
+    mapInspector.hidden = false;
+    mapInspector.innerHTML = '<button class="inspector-close" aria-label="Fechar">×</button><div class="inspector-kind">' + (kind || 'MAPA') + '</div><h3>' + title + '</h3><div class="inspector-body">' + body + '</div>';
+    mapInspector.querySelector('.inspector-close').onclick = function () { mapInspector.hidden = true; };
+  }
+
+  function inspectEdge(edge) {
+    var ratio = edge.capacity ? Math.round((edge.congestion / edge.capacity) * 100) : 0;
+    var risk = edge.risk || 0;
+    showInspector(edge.name || 'Rua', '<div><b>Distância</b><span>' + edge.weight + ' m</span></div><div><b>Agentes</b><span>' + (edge.congestion || 0) + '</span></div><div><b>Congestionamento</b><span>' + ratio + '%</span></div><div><b>Risco</b><span>' + (risk > 60 ? 'Alto' : risk > 20 ? 'Atenção' : 'Baixo') + '</span></div><div><b>Custo A*</b><span>' + Math.round(roadCost(edge)) + '</span></div><div><b>Status</b><span>' + (edge.blocked ? 'Bloqueada' : 'Livre') + '</span></div>', 'RUA');
+  }
+
+  function inspectAgent(agent) {
+    var node = getNode(agent.currentNodeId);
+    var edge = agent.path && agent.pathIndex < agent.path.length - 1 ? edgeBetween(agent.path[agent.pathIndex], agent.path[agent.pathIndex + 1]) : null;
+    var danger = node ? getFireDangerAtNode(node) : (edge ? edge.risk / 25 : 0);
+    showInspector('Pessoa #' + agent.id, '<div><b>Origem</b><span>' + (agent.originName || 'Mapa') + '</span></div><div><b>Destino</b><span>' + (agent.targetExitName || 'A definir') + '</span></div><div><b>Rota</b><span>' + (agent.path ? agent.path.length - 1 : 0) + ' ruas</span></div><div><b>Velocidade</b><span>' + (agent.speed || 1).toFixed(2) + 'x</span></div><div><b>Risco</b><span>' + (danger > 1.5 ? 'Alto' : danger > 0 ? 'Atenção' : 'Seguro') + '</span></div><div><b>Status</b><span>' + (agent.evacuated ? 'EVACUADO' : danger > 0 ? 'EM RISCO' : 'EVACUANDO') + '</span></div>', 'PESSOA');
   }
 
   function safeNodeName(node, fallback) {
@@ -721,6 +744,7 @@
           ag.segmentProgress = 0;
         }
         ag.path = res.path;
+        ag.targetExitName = res.destinationExit ? res.destinationExit.name : ag.targetExitName;
         totalExploredSum += res.nodesExplored;
         totalCostSum += res.cost;
         validCount++;
@@ -1202,7 +1226,7 @@
         });
         var marker = L.marker([p.lat, p.lng], { icon: icon, interactive: true }).addTo(agentsLayer);
         marker.bindTooltip('Pessoa #' + ag.id + '<br>Estado: ' + (ag.evacuated ? 'evacuada' : isRunning ? 'em movimento' : 'aguardando') + '<br>Velocidade: ' + (ag.speed || 1).toFixed(2) + 'x', { direction: 'top', offset: [0, -6] });
-        marker.on('click', function () { addLog('Pessoa #' + ag.id + ' selecionada'); });
+        marker.on('click', function () { inspectAgent(ag); addLog('Pessoa #' + ag.id + ' selecionada'); });
         agentMarkersMap.set(ag.id, marker);
       } else {
         var marker = agentMarkersMap.get(ag.id);
@@ -1388,7 +1412,7 @@
 
     toolButtons.forEach(function (b) { b.classList.remove('active'); });
     mapCanvas.classList.remove('tool-active');
-    activeTool = null;
+    activeTool = 'selecionar';
 
     btnIniciar.textContent = '▶ Iniciar simulação';
     btnPausar.textContent = '⏸ Pausar';
@@ -1396,13 +1420,46 @@
   });
 
   /* ---------- 11. FERRAMENTAS DO MAPA ---------- */
-  var activeTool = null;
+  var activeTool = 'selecionar';
+
+  function addPeopleToScenario(amount) {
+    var candidates = nodes.filter(function (n) { return n.type !== 'blocked' && n.type !== 'exit'; });
+    for (var i = 0; i < amount; i++) {
+      if (!candidates.length) break;
+      var base = candidates[Math.floor(Math.random() * candidates.length)];
+      var person = createAgent(agents.length + 1, base.id);
+      person.originName = base.name;
+      agents.push(person);
+    }
+    totalAgentes = agents.length;
+    fieldAgentes.textContent = totalAgentes;
+    statTotal.textContent = totalAgentes;
+    recalculateAllAgentPaths();
+    renderGraph();
+    addLog(amount + ' pessoa(s) adicionada(s) ao cenário');
+  }
+
+  document.getElementById('btn-add-10').addEventListener('click', function () { addPeopleToScenario(10); });
+  document.getElementById('btn-add-50').addEventListener('click', function () { addPeopleToScenario(50); });
+  document.getElementById('btn-clear-people').addEventListener('click', function () {
+    agents = agents.filter(function (a) { return a.evacuated; });
+    totalAgentes = agents.length;
+    fieldAgentes.textContent = totalAgentes;
+    statTotal.textContent = totalAgentes;
+    renderGraph();
+    addLog('Pessoas não evacuadas removidas');
+  });
+
+  document.getElementById('btn-presentation').addEventListener('click', function () {
+    appShell.classList.toggle('presentation-mode');
+    setTimeout(function () { leafletMap.invalidateSize(); }, 50);
+  });
 
   toolButtons.forEach(function (btn) {
     btn.addEventListener('click', function () {
       var tool = btn.dataset.tool;
       if (activeTool === tool) {
-        activeTool = null;
+    activeTool = 'selecionar';
         btn.classList.remove('active');
         mapCanvas.classList.remove('tool-active');
         return;
@@ -1410,12 +1467,15 @@
       toolButtons.forEach(function (b) { b.classList.remove('active'); });
       btn.classList.add('active');
       activeTool = tool;
-      mapCanvas.classList.add('tool-active');
+      mapCanvas.classList.toggle('tool-active', tool !== 'selecionar');
 
       var toolNames = {
-        bloqueio: 'Adicionar bloqueio (🔥)',
-        saida: 'Marcar saída segura (🚪)',
-        pessoa: 'Adicionar pessoa (🧍)'
+        bloqueio: 'Bloquear uma rua',
+        incendio: 'Adicionar incêndio',
+        saida: 'Criar saída segura',
+        pessoa: 'Adicionar pessoa',
+        apagar: 'Apagar elemento',
+        selecionar: 'Selecionar elemento'
       };
       addLog('Ferramenta ativa: ' + toolNames[tool] + ' — clique no mapa');
     });
@@ -1427,6 +1487,48 @@
     var xy = latLngToXY(evt.latlng.lat, evt.latlng.lng);
     var x = xy.x;
     var y = xy.y;
+
+    var hitAgent = agents.filter(function (a) { return !a.evacuated; }).sort(function (a, b) {
+      return Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y);
+    })[0];
+    if (activeTool === 'selecionar') {
+      var selectedEdge = nearestGraphEdge(x, y);
+      if (hitAgent && Math.hypot(hitAgent.x - x, hitAgent.y - y) < 18) inspectAgent(hitAgent);
+      else if (selectedEdge && selectedEdge.distance < 22) inspectEdge(selectedEdge.edge);
+      else showInspector('Mapa de evacuação', '<p>Escolha uma ferramenta e clique sobre uma rua para montar o cenário.</p>', 'CENÁRIO');
+      return;
+    }
+
+    if (activeTool === 'apagar') {
+      if (hitAgent && Math.hypot(hitAgent.x - x, hitAgent.y - y) < 18) {
+        agents = agents.filter(function (a) { return a.id !== hitAgent.id; });
+        totalAgentes = agents.length;
+        addLog('Pessoa removida do cenário');
+      } else {
+        var eraseEdge = nearestGraphEdge(x, y);
+        if (eraseEdge && eraseEdge.distance < 22) {
+          eraseEdge.edge.blocked = false;
+          activeFires = activeFires.filter(function (f) { return Math.hypot(f.x - eraseEdge.x, f.y - eraseEdge.y) > 24; });
+          addLog('Bloqueio removido — rotas recalculadas');
+        } else {
+          var eraseFire = activeFires.slice().sort(function (a, b) { return Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y); })[0];
+          if (eraseFire && Math.hypot(eraseFire.x - x, eraseFire.y - y) < eraseFire.radius) activeFires.splice(activeFires.indexOf(eraseFire), 1);
+        }
+      }
+      recalculateAllAgentPaths();
+      updateStatsDisplay();
+      renderGraph();
+      return;
+    }
+
+    if (activeTool === 'incendio') {
+      var intensity = fireIntensityInput ? parseFloat(fireIntensityInput.value) : 2;
+      activeFires.push({ nodeId: 'fire-' + Date.now(), x: x, y: y, radius: 30 + intensity * 15, intensity: intensity, spread: fireSpreadInput ? parseFloat(fireSpreadInput.value) : 1 });
+      addLog('<span class="warn">Incêndio adicionado — áreas próximas recalculando</span>');
+      recalculateAllAgentPaths();
+      renderGraph();
+      return;
+    }
 
     if (activeTool === 'bloqueio') {
       var streetHit = nearestGraphEdge(x, y);
