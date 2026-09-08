@@ -169,40 +169,24 @@
           <input class="range-control" id="fire-spread" type="range" min="0.5" max="3" step="0.5" value="1">
         </div>
 
-        <div class="panel-title spaced">Edição</div>
-        <div class="field"><span>Ferramentas</span><span class="val">No mapa</span></div>
+        <div class="panel-title spaced">Ferramentas da Feira</div>
+        <div class="tool-btn" data-tool="bloqueio"><span class="ic danger">🔥</span> Adicionar bloqueio</div>
+        <div class="tool-btn" data-tool="saida"><span class="ic safe">🚪</span> Marcar saída segura</div>
+        <div class="tool-btn" data-tool="pessoa"><span class="ic amber">🧍</span> Adicionar pessoa</div>
       </div>
 
       <!-- CENTER: MAPA REALISTA DA LIBERDADE -->
       <div class="panel map-panel">
         <div class="map-toolbar" id="map-toolbar">
           <div class="chip active" data-tab="tab-mapa">Mapa</div>
-          <div class="chip" data-tab="tab-custo">Custo A*</div>
-          <div class="chip" data-tab="tab-nos">Busca</div>
-          <div class="chip" data-tab="tab-comparar">A* x Dijkstra</div>
-          <button class="map-mode-btn" id="btn-presentation">🎥 Apresentação</button>
+          <div class="chip" data-tab="tab-custo">Custo do A*</div>
+          <div class="chip" data-tab="tab-nos">Nós explorados</div>
+          <div class="chip" data-tab="tab-comparar">Comparar c/ Dijkstra</div>
         </div>
 
         <div class="map-canvas" id="map-canvas">
           <!-- MAPA REAL DO BAIRRO DA LIBERDADE (OpenStreetMap via Leaflet) -->
           <div id="leaflet-map"></div>
-
-          <div class="map-edit-toolbar" id="map-edit-toolbar">
-            <button class="map-tool active" data-tool="selecionar">👆 <span>Selecionar</span></button>
-            <button class="map-tool" data-tool="pessoa">🧍 <span>Pessoa</span></button>
-            <button class="map-tool" data-tool="bloqueio">🚧 <span>Bloqueio</span></button>
-            <button class="map-tool" data-tool="incendio">🔥 <span>Incêndio</span></button>
-            <button class="map-tool" data-tool="saida">🚪 <span>Saída</span></button>
-            <button class="map-tool" data-tool="apagar">🗑️ <span>Apagar</span></button>
-          </div>
-
-          <div class="map-quick-actions">
-            <button id="btn-add-10">+10 pessoas</button>
-            <button id="btn-add-50">+50 pessoas</button>
-            <button id="btn-clear-people">Limpar pessoas</button>
-          </div>
-
-          <aside class="map-inspector" id="map-inspector" hidden></aside>
 
           <!-- HUD sutil sobre o mapa real -->
           <div class="grid-lines"></div>
@@ -210,7 +194,13 @@
           <div id="overlay-container" class="overlay-container"></div>
         </div>
 
-        <div class="map-legend" id="map-legend"><span>Rua</span><span class="legend-live"></span> livre <span class="legend-risk"></span> risco <span class="legend-exit"></span> saída</div>
+        <div class="map-legend" id="map-legend">
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--surface-raised);border:2px solid var(--text-muted);"></span> Cruzamento</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--safe);"></span> Saída segura</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--danger);"></span> Bloqueio / risco</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--amber);border-radius:50% 50% 50% 4px;"></span> Agente</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:transparent;border-top:2.5px dashed var(--safe);width:14px;height:0;border-radius:0;"></span> Rota (A*)</div>
+        </div>
       </div>
 
       <!-- RIGHT: STATS -->
