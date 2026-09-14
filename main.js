@@ -217,7 +217,9 @@
 
   // Camadas redesenhadas a cada frame da simulação
   var streetsLayer  = L.layerGroup().addTo(leafletMap); // arestas do grafo (ruas)
-  var nodesLayer     = L.layerGroup().addTo(leafletMap); // cruzamentos / saídas / bloqueios
+  var nodesLayer     = L.layerGroup().addTo(leafletMap); // cruzamentos / bloqueios
+  // Saídas usam uma camada própria para não sumirem junto com os nós.
+  var exitsLayer     = L.layerGroup().addTo(leafletMap);
   var routesLayer    = L.layerGroup().addTo(leafletMap); // rotas calculadas pelo A*
   var agentsLayer    = L.layerGroup().addTo(leafletMap); // pessoas em evacuação
   var costTagsLayer  = L.layerGroup().addTo(leafletMap); // rótulos f(n)/g(n)/h(n)
@@ -806,6 +808,7 @@
   function renderGraph() {
     streetsLayer.clearLayers();
     nodesLayer.clearLayers();
+    exitsLayer.clearLayers();
     routesLayer.clearLayers();
     // Mantém a camada e o registro dos marcadores sincronizados antes de redesenhar.
     // Limpar somente a camada faria o Map ainda apontar para ícones já removidos.
@@ -816,6 +819,22 @@
 
     // Os nós continuam no grafo e nos cálculos, mas não são renderizados no mapa.
     // Assim, o clique chega diretamente ao mapa para as ferramentas de cenário.
+
+    // Mantém as saídas sempre acima dos nós e sem os estilos de open/closed set.
+    nodes.filter(function (n) { return n.type === 'exit'; }).forEach(function (exit) {
+      var exitPoint = safeNodeLatLng(exit);
+      var exitIcon = L.divIcon({
+        className: '',
+        html: '<div class="node exit" title="' + exit.name.replace(/"/g, '&quot;') + '"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      });
+      L.marker([exitPoint.lat, exitPoint.lng], {
+        icon: exitIcon,
+        interactive: false,
+        zIndexOffset: 1000
+      }).addTo(exitsLayer);
+    });
 
     // Desenha os agentes (pessoas evacuando) em tempo real nas ruas do Leaflet
     updateAgentMarkers();
