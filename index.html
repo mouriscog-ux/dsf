@@ -6,6 +6,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Anta&family=Bowlby+One+SC&family=Luckiest+Guy&family=Space+Grotesk:wght@300..700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <link href="style.css" rel="stylesheet">
 </head>
 <body>
@@ -158,7 +159,19 @@
           <div class="slider-track" id="speed-track"><div class="slider-fill" id="speed-fill"></div><div class="slider-thumb" id="speed-thumb"></div></div>
         </div>
 
-        <div class="panel-title spaced">Ferramentas de simulação</div>
+<div class="panel-title spaced">Ferramentas de simulação</div>
+
+        <div class="slider-row fire-control">
+          <div class="slider-label"><span>Intensidade do Fogo</span><span id="fire-intensity-label">2.0×</span></div>
+          <input class="range-control" id="fire-intensity" type="range" min="1" max="5" step="0.5" value="2">
+        </div>
+
+        <div class="slider-row fire-control">
+          <div class="slider-label"><span>Taxa de Espalhamento</span><span id="fire-spread-label">1.0×</span></div>
+          <input class="range-control" id="fire-spread" type="range" min="0.5" max="3" step="0.5" value="1">
+        </div>
+
+        <div class="panel-title spaced">Ferramentas da Feira</div>
         <div class="tool-btn" data-tool="bloqueio"><span class="ic danger">🔥</span> Adicionar bloqueio</div>
         <div class="tool-btn" data-tool="saida"><span class="ic safe">🚪</span> Marcar saída segura</div>
         <div class="tool-btn" data-tool="pessoa"><span class="ic amber">🧍</span> Adicionar pessoa</div>
@@ -174,15 +187,11 @@
         </div>
 
         <div class="map-canvas" id="map-canvas">
+          <!-- MAPA REAL DO BAIRRO DA LIBERDADE (OpenStreetMap via Leaflet) -->
+          <div id="leaflet-map"></div>
+
+          <!-- HUD sutil sobre o mapa real -->
           <div class="grid-lines"></div>
-
-          <!-- CAMADA SVG DE RUAS E BLOCOS URBANOS REALISTAS -->
-          <svg class="path-svg" id="path-svg"></svg>
-
-          <!-- CONTAINERS DINÂMICOS -->
-          <div id="nodes-container"></div>
-          <div id="agents-container"></div>
-          <div id="tags-container"></div>
 
           <div id="overlay-container" class="overlay-container"></div>
         </div>
@@ -203,6 +212,8 @@
         <div class="stat-card"><span class="lbl">Tempo decorrido</span><span class="num" id="stat-tempo">00:00</span></div>
         <div class="stat-card"><span class="lbl">Nós explorados</span><span class="num amber" id="stat-nos">—</span></div>
         <div class="stat-card"><span class="lbl">Custo médio</span><span class="num" id="stat-custo">—</span></div>
+        <div class="stat-card"><span class="lbl">Resposta A*</span><span class="num safe" id="stat-fire-astar">—</span></div>
+        <div class="stat-card"><span class="lbl">Resposta Dijkstra</span><span class="num" id="stat-fire-dijkstra">—</span></div>
 
         <div class="panel-title spaced">Evacuados / tempo</div>
         <div class="chart-wrap">
@@ -324,6 +335,7 @@
   </section>
 </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="main.js"></script>
 </body>
-</html>
+</html></html></html>
