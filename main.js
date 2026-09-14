@@ -500,7 +500,18 @@
 
   function snapToNearestStreet(lat, lng) {
     var minDistance = Infinity;
-    var bestPoint = { lat: lat, lng: lng, x: 0, y: 0, fromNodeId: 'N1', toNodeId: 'N2', progress: 0 };
+    var clickedXY = latLngToXY(lat, lng);
+    // Mantém o marcador no ponto clicado até encontrar uma rua elegível.
+    // O valor antigo (0, 0) podia posicionar alguns bloqueios fora do mapa.
+    var bestPoint = {
+      lat: lat,
+      lng: lng,
+      x: clickedXY.x,
+      y: clickedXY.y,
+      fromNodeId: null,
+      toNodeId: null,
+      progress: 0
+    };
 
     edges.forEach(function (e) {
       var n1 = getNode(e.from);
@@ -645,6 +656,7 @@
   }
 
   function blockStreetAtSnap(snap) {
+    if (!snap || !snap.fromNodeId || !snap.toNodeId) return 0;
     var blockedSegments = 0;
     edges.forEach(function (edge) {
       var isSameStreetSegment =
@@ -1368,7 +1380,7 @@
         if (d < minDist) { minDist = d; closest = n; }
       });
 
-      if (closest && minDist < 35) {
+      if (closest && minDist < 12) {
         igniteFireAtNode(closest, 'manual');
       } else {
         var snapBlock = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
@@ -1387,8 +1399,12 @@
         igniteFireAtNode(newFireNode, 'manual');
         if (blockedSegments > 0) {
           addLog('<span class="warn">TRECHO DA VIA BLOQUEADO — agentes procurando desvio</span>');
+        } else {
+          addLog('<span class="warn">BLOQUEIO REGISTRADO FORA DE UMA VIA CONECTADA</span>');
         }
       }
+      // Mostra o bloqueio imediatamente, antes de aguardar o recálculo de rotas.
+      renderGraph();
       await recalculateAllAgentPathsAsync();
 
     } else if (activeTool === 'saida') {
