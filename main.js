@@ -220,6 +220,8 @@
   var nodesLayer     = L.layerGroup().addTo(leafletMap); // cruzamentos / bloqueios
   // Saídas usam uma camada própria para não sumirem junto com os nós.
   var exitsLayer     = L.layerGroup().addTo(leafletMap);
+  // Bloqueios também precisam continuar visíveis quando os nós são ocultados.
+  var hazardsLayer   = L.layerGroup().addTo(leafletMap);
   var routesLayer    = L.layerGroup().addTo(leafletMap); // rotas calculadas pelo A*
   var agentsLayer    = L.layerGroup().addTo(leafletMap); // pessoas em evacuação
   var costTagsLayer  = L.layerGroup().addTo(leafletMap); // rótulos f(n)/g(n)/h(n)
@@ -809,6 +811,7 @@
     streetsLayer.clearLayers();
     nodesLayer.clearLayers();
     exitsLayer.clearLayers();
+    hazardsLayer.clearLayers();
     routesLayer.clearLayers();
     // Mantém a camada e o registro dos marcadores sincronizados antes de redesenhar.
     // Limpar somente a camada faria o Map ainda apontar para ícones já removidos.
@@ -834,6 +837,22 @@
         interactive: false,
         zIndexOffset: 1000
       }).addTo(exitsLayer);
+    });
+
+    // Exibe bloqueios como riscos independentes da camada de nós oculta.
+    nodes.filter(function (n) { return n.type === 'blocked'; }).forEach(function (blocked) {
+      var blockedPoint = safeNodeLatLng(blocked);
+      var blockedIcon = L.divIcon({
+        className: '',
+        html: '<div class="node blocked" title="' + blocked.name.replace(/"/g, '&quot;') + '"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      });
+      L.marker([blockedPoint.lat, blockedPoint.lng], {
+        icon: blockedIcon,
+        interactive: false,
+        zIndexOffset: 900
+      }).addTo(hazardsLayer);
     });
 
     // Desenha os agentes (pessoas evacuando) em tempo real nas ruas do Leaflet
