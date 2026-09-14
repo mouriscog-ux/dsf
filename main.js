@@ -296,6 +296,7 @@
   function getNeighbors(nodeId) {
     var list = [];
     edges.forEach(function (e) {
+      if (e.blocked) return;
       if (e.from === nodeId) {
         var target = getNode(e.to);
         if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
@@ -622,6 +623,11 @@
         totalExploredSum += res.nodesExplored;
         totalCostSum += res.cost;
         validCount++;
+      } else {
+        // Nunca mantenha uma rota anterior se ela passou a incluir um bloqueio.
+        ag.path = [ag.currentNodeId];
+        ag.pathIndex = 0;
+        ag.segmentProgress = 0;
       }
     });
 
@@ -636,6 +642,20 @@
     updateFireComparison(nodeId);
     addLog('<span class="warn">AGENTES RECALCULANDO ROTA VIA A*</span>');
     recalculateAllAgentPaths();
+  }
+
+  function blockStreetAtSnap(snap) {
+    var blockedSegments = 0;
+    edges.forEach(function (edge) {
+      var isSameStreetSegment =
+        (edge.from === snap.fromNodeId && edge.to === snap.toNodeId) ||
+        (edge.from === snap.toNodeId && edge.to === snap.fromNodeId);
+      if (isSameStreetSegment) {
+        edge.blocked = true;
+        blockedSegments++;
+      }
+    });
+    return blockedSegments;
   }
 
   function getApiUrl(endpoint) {
@@ -791,6 +811,11 @@
               totalExploredSum += res.nodesExplored;
               totalCostSum += res.cost;
               validCount++;
+            } else {
+              // Sem caminho seguro, o agente para; não continua pela rota antiga.
+              ag.path = [ag.currentNodeId];
+              ag.pathIndex = 0;
+              ag.segmentProgress = 0;
             }
           });
 
@@ -1346,10 +1371,23 @@
       if (closest && minDist < 35) {
         igniteFireAtNode(closest, 'manual');
       } else {
+        var snapBlock = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
         var newId = 'NB' + (nodes.length + 1);
-        var newFireNode = { id: newId, name: 'Foco de incêndio (' + x + ',' + y + ')', x: x, y: y, type: 'blocked' };
+        var newFireNode = {
+          id: newId,
+          name: 'Bloqueio em ' + safeNodeName(getNode(snapBlock.fromNodeId), 'via'),
+          lat: snapBlock.lat,
+          lng: snapBlock.lng,
+          x: snapBlock.x,
+          y: snapBlock.y,
+          type: 'blocked'
+        };
         nodes.push(newFireNode);
+        var blockedSegments = blockStreetAtSnap(snapBlock);
         igniteFireAtNode(newFireNode, 'manual');
+        if (blockedSegments > 0) {
+          addLog('<span class="warn">TRECHO DA VIA BLOQUEADO — agentes procurando desvio</span>');
+        }
       }
       await recalculateAllAgentPathsAsync();
 

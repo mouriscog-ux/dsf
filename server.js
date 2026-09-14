@@ -48,6 +48,7 @@ function buildGraph(dynamicNodes = [], dynamicEdges = [], blockedIds = []) {
   const allEdges = Array.isArray(dynamicEdges) ? dynamicEdges : [];
   allEdges.forEach(e => {
     if (!e || !e.from || !e.to) return;
+    if (e.blocked) return;
     if (blockedSet.has(e.from) || blockedSet.has(e.to)) return;
     const nFrom = nodesMap.get(e.from);
     const nTo = nodesMap.get(e.to);
