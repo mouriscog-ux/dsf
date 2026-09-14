@@ -483,14 +483,16 @@ const server = http.createServer(async (req, res) => {
   
     } catch (error) {
   
-      console.error('Erro ao consultar OSM:', error);
+      // A malha local do cliente assume quando o provedor externo está fora do ar.
+      // Mantemos o log conciso para não sugerir que o servidor local parou.
+      console.warn('OSM indisponível; o cliente usará a malha local:', error.message);
   
       res.writeHead(500, {
         'Content-Type': 'application/json'
       });
   
       res.end(JSON.stringify({
-        error: 'Erro ao consultar OpenStreetMap',
+        error: 'OpenStreetMap indisponível; use a malha local do cenário',
         message: error.message
       }));
     }

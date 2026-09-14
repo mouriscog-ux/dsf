@@ -677,6 +677,10 @@
     return endpoint;
   }
 
+  function isUsingLocalServer() {
+    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  }
+
   function normalizeApiGraph(graph) {
     return {
       nodes: graph.nodes.map(function (n) {
@@ -1571,7 +1575,10 @@
       console.warn('API local indisponível; tentando Overpass diretamente', e);
     }
 
-    if (!apiGraph) {
+    // Ao rodar com o servidor local, uma resposta inválida significa que a
+    // Overpass falhou no servidor. Não repita as mesmas chamadas no navegador:
+    // use a malha local e mantenha a simulação disponível imediatamente.
+    if (!apiGraph && !isUsingLocalServer()) {
       try {
         apiGraph = await fetchGraphFromOverpass();
         addLog('Grafo do bairro carregado diretamente do OpenStreetMap');
@@ -1579,6 +1586,8 @@
         console.error('Não foi possível carregar a malha viária da API', e);
         addLog('<span class="warn">API de ruas indisponível — usando mapa de contingência</span>');
       }
+    } else if (!apiGraph) {
+      addLog('<span class="warn">OSM indisponível nesta rede — usando malha local do cenário</span>');
     }
 
     if (apiGraph && apiGraph.nodes.length > 0 && apiGraph.edges.length > 0) {
