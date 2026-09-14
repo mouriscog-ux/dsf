@@ -153,7 +153,9 @@
   // Aqui definimos a correspondência entre esse espaço abstrato e a área geográfica
   // real do Bairro da Liberdade (SP), para desenhar tudo em cima do mapa de verdade.
   var MODEL_BOUNDS = { minX: 40, maxX: 440, minY: 40, maxY: 360 };
-  var GEO_BOUNDS = { south: -23.5650, north: -23.5530, west: -46.6420, east: -46.6280 };
+  // Limite do cenário: envolve todos os nós iniciais, com cerca de 25 m de margem
+  // para que os marcadores das extremidades não sejam cortados pelo mapa.
+  var GEO_BOUNDS = { south: -23.55895, north: -23.55495, west: -46.63645, east: -46.63225 };
 
   function getNodeByXY(x, y) {
     if (!nodes) return null;
@@ -195,16 +197,16 @@
     return { x: x, y: y };
   }
 
-  // "Efeito parede": o usuário pode navegar dentro da Liberdade, mas não sai da área
+  // "Efeito parede": o usuário navega apenas dentro da área coberta pelos nós.
   var WALL_BOUNDS = L.latLngBounds(
-    L.latLng(GEO_BOUNDS.south - 0.0025, GEO_BOUNDS.west - 0.0025),
-    L.latLng(GEO_BOUNDS.north + 0.0025, GEO_BOUNDS.east + 0.0025)
+    L.latLng(GEO_BOUNDS.south, GEO_BOUNDS.west),
+    L.latLng(GEO_BOUNDS.north, GEO_BOUNDS.east)
   );
 
   var leafletMap = L.map('leaflet-map', {
     center: [(GEO_BOUNDS.north + GEO_BOUNDS.south) / 2, (GEO_BOUNDS.west + GEO_BOUNDS.east) / 2],
-    zoom: 16,
-    minZoom: 15,
+    zoom: 18,
+    minZoom: 17,
     maxZoom: 19,
     maxBounds: WALL_BOUNDS,
     maxBoundsViscosity: 1.0
