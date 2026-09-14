@@ -1409,12 +1409,20 @@
 
     } else if (activeTool === 'saida') {
       var newExitId = 'NE' + (nodes.length + 1);
-      nodes.push({ id: newExitId, name: 'Nova Saída (' + Math.round(x) + ',' + Math.round(y) + ')', x: x, y: y, type: 'exit' });
+      nodes.push({
+        id: newExitId,
+        name: 'Nova Saída (' + Math.round(x) + ',' + Math.round(y) + ')',
+        lat: evt.latlng.lat,
+        lng: evt.latlng.lng,
+        x: x,
+        y: y,
+        type: 'exit'
+      });
 
       var nearest = null;
       var minD = Infinity;
       nodes.forEach(function (n) {
-        if (n.id !== newExitId) {
+        if (n.id !== newExitId && n.type !== 'blocked') {
           var d = Math.hypot(n.x - x, n.y - y);
           if (d < minD) { minD = d; nearest = n; }
         }
@@ -1423,6 +1431,8 @@
         edges.push({ from: newExitId, to: nearest.id, weight: Math.round(minD), name: 'Acesso Saída' });
       }
       addLog('<span class="hl">Nova saída segura cadastrada</span>');
+      // A saída é visível no instante do clique, mesmo enquanto a rota é recalculada.
+      renderGraph();
       await recalculateAllAgentPathsAsync();
 
     } else if (activeTool === 'pessoa') {
