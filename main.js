@@ -6,16 +6,13 @@ const mapModel = new SimMap();
 let graph = new Graph(mapModel);
 let routing = new Routing(graph);
 
-const MODEL_BOUNDS = { minX: 40, maxX: 440, minY: 40, maxY: 400 };
-const GEO_BOUNDS = { south: -23.5600, north: -23.5540, west: -46.6400, east: -46.6320 };
-const AGENT_STATES = { IDLE: 'IDLE', MOVING: 'MOVING', WAITING: 'WAITING', BLOCKED: 'BLOCKED', EVACUATED: 'EVACUATED' };
+const AGENT_STATES = { IDLE: 'IDLE', MOVING: 'MOVING', BLOCKED: 'BLOCKED', EVACUATED: 'EVACUATED' };
 
 let agents = [];
 let nextAgentId = 1;
 let state = 'stopped';
 let speed = 1.5;
-let selectedEdgeId = 'BE';
-let fireEdgeId = 'BE';
+let selectedEdgeId = null;
 let activeTab = 'tab-mapa';
 let elapsedSeconds = 0;
 let timer = null;
@@ -25,6 +22,7 @@ let dijkstraResult = null;
 let activeTool = null;
 let selectedAgentId = null;
 let recalculationCount = 0;
+let safeExitNodeId = null;
 
 const qs = (id) => document.getElementById(id);
 const statusDot = qs('status-dot');
@@ -51,23 +49,12 @@ const chartXStart = qs('chart-x-start');
 const chartXMid = qs('chart-x-mid');
 const chartXEnd = qs('chart-x-end');
 
-function xyToLatLng(x, y) {
-  const lng = GEO_BOUNDS.west + (x - MODEL_BOUNDS.minX) / (MODEL_BOUNDS.maxX - MODEL_BOUNDS.minX) * (GEO_BOUNDS.east - GEO_BOUNDS.west);
-  const lat = GEO_BOUNDS.north - (y - MODEL_BOUNDS.minY) / (MODEL_BOUNDS.maxY - MODEL_BOUNDS.minY) * (GEO_BOUNDS.north - GEO_BOUNDS.south);
-  return { lat, lng };
-}
-
-function latLngToXY(lat, lng) {
-  return {
-    x: MODEL_BOUNDS.minX + (lng - GEO_BOUNDS.west) / (GEO_BOUNDS.east - GEO_BOUNDS.west) * (MODEL_BOUNDS.maxX - MODEL_BOUNDS.minX),
-    y: MODEL_BOUNDS.minY + (GEO_BOUNDS.north - lat) / (GEO_BOUNDS.north - GEO_BOUNDS.south) * (MODEL_BOUNDS.maxY - MODEL_BOUNDS.minY)
-  };
-}
-
-function nodeLatLng(node) { return xyToLatLng(node.x, node.y); }
-function edgeLatLngs(edge) { return mapModel.getEdgeGeometry(edge).map(p => xyToLatLng(p.x, p.y)); }
+function xyToLatLng(x, y) { return mapModel.xyToLatLng(x, y); }
+function latLngToXY(lat, lng) { return mapModel.latLngToXY(lat, lng); }
+function nodeLatLng(node) { return { lat: node.lat, lng: node.lng }; }
+function edgeLatLngs(edge) { return mapModel.getEdgeGeometry(edge).map(p => ({ lat: p.lat, lng: p.lng })); }
 function getNode(id) { return mapModel.getNode(id); }
-function getExitId() { return mapModel.getNodes().find(n => n.type === 'exit')?.id || 'I'; }
+function getExitId() { return safeExitNodeId || mapModel.getNodes().find(n => n.type === 'exit')?.id || mapModel.getNodes()[0]?.id; }
 function rebuildGraph() { graph = new Graph(mapModel); routing = new Routing(graph); }
 
 function addLog(message) {
@@ -108,7 +95,14 @@ function snapToRoad(xy) {
         const toNode = getNode(edge.to);
         const fromDistance = Math.hypot(projected.x - fromNode.x, projected.y - fromNode.y);
         const toDistance = Math.hypot(projected.x - toNode.x, projected.y - toNode.y);
-        best = { edge, point: { x: projected.x, y: projected.y }, distance: projected.distance, nearestNode: fromDistance <= toDistance ? edge.from : edge.to };
+        best = {
+          edge,
+          point: { x: projected.x, y: projected.y },
+          segmentIndex: i,
+          t: projected.t,
+          distance: projected.distance,
+          nearestNode: fromDistance <= toDistance ? edge.from : edge.to
+        };
       }
     }
   }
@@ -222,13 +216,13 @@ function planAgent(agent, announce = false) {
   return true;
 }
 
-function addAgent(type = 'person', startNode = 'A', destinationNode = getExitId(), originPoint = null, destinationPoint = null) {
+function addAgent(type = 'person', startNode = getExitId(), destinationNode = getExitId(), originPoint = null, destinationPoint = null) {
   const start = getNode(startNode) || getNode('A');
   const destination = getNode(destinationNode) || getNode(getExitId());
   const offset = 0;
   const agent = {
     id: nextAgentId++, type, currentNode: start.id, destinationNode: destination.id,
-    route: [], routeIndex: 0, segmentProgress: 0, speed: type === 'car' ? 80 : 48 + (nextAgentId % 4) * 5,
+    route: [], routeIndex: 0, segmentProgress: 0, speed: 42 + (nextAgentId % 4) * 5,
     state: AGENT_STATES.IDLE, x: originPoint?.x ?? start.x, y: (originPoint?.y ?? start.y) + offset, offset,
     originPoint: originPoint ? { ...originPoint } : { x: start.x, y: start.y },
     destinationPoint: destinationPoint ? { ...destinationPoint } : { x: destination.x, y: destination.y },
@@ -238,7 +232,7 @@ function addAgent(type = 'person', startNode = 'A', destinationNode = getExitId(
   planAgent(agent);
   updateStats();
   selectedAgentId = agent.id;
-  addLog((type === 'car' ? 'carro' : 'pessoa') + ' ' + agent.id + ' adicionad' + (type === 'car' ? 'o' : 'a') + ' em ' + start.name);
+  addLog('pessoa ' + agent.id + ' adicionada em ' + start.name);
   return agent;
 }
 window.addAgent = addAgent;
@@ -270,26 +264,23 @@ function resetSimulation() {
   agents = [];
   nextAgentId = 1;
   elapsedSeconds = 0;
-  selectedEdgeId = 'BE';
-  fireEdgeId = 'BE';
+  selectedEdgeId = mapModel.getEdges()[0]?.id || null;
   lastPathResult = null;
   dijkstraResult = null;
   activeTool = null;
   selectedAgentId = null;
   recalculationCount = 0;
+  safeExitNodeId = mapModel.getNodes().find(n => n.type === 'exit')?.id || mapModel.getNodes()[0]?.id || null;
   logList.innerHTML = '';
-  addAgent('person', 'A', 'I');
-  addAgent('person', 'D', 'I');
-  addAgent('person', 'G', 'I');
-  addAgent('car', 'B', 'I');
   setStatus('stopped');
-  addLog('grafo real A-I carregado: ruas, nós, arestas e saída segura');
+  addLog('rede viária carregada: ' + mapModel.getNodes().length + ' nós e ' + mapModel.getEdges().length + ' trechos reais');
+  addLog('use Adicionar pessoa e Saída segura para iniciar uma evacuação');
   updateChart(true);
   renderAll();
 }
 
 const leafletMap = L.map('leaflet-map', {
-  center: [(GEO_BOUNDS.north + GEO_BOUNDS.south) / 2, (GEO_BOUNDS.west + GEO_BOUNDS.east) / 2],
+  center: [(mapModel.geoBounds.north + mapModel.geoBounds.south) / 2, (mapModel.geoBounds.west + mapModel.geoBounds.east) / 2],
   zoom: 16,
   minZoom: 15,
   maxZoom: 19
@@ -306,12 +297,14 @@ function renderStreets() {
   for (const edge of mapModel.getEdges()) {
     const isSelected = edge.id === selectedEdgeId;
     const color = edge.blocked ? '#ff3d00' : isSelected ? '#0077b6' : '#26394f';
-    const poly = L.polyline(edgeLatLngs(edge), { color, weight: edge.blocked ? 13 : 10, opacity: edge.blocked ? 0.95 : 0.75, lineCap: 'round' }).addTo(streetsLayer);
+    const poly = L.polyline(edgeLatLngs(edge), { color, weight: edge.blocked ? 8 : 5, opacity: edge.blocked ? 0.95 : 0.42, lineCap: 'round' }).addTo(streetsLayer);
     poly.on('click', () => { selectedEdgeId = edge.id; addLog('rua selecionada: ' + edge.name + ' (' + edge.id + ')'); renderAll(); });
-    const mid = edgeLatLngs(edge)[Math.floor(edgeLatLngs(edge).length / 2)];
-    L.marker(mid, { icon: L.divIcon({ className: '', html: '<div class="map-tag">' + (edge.blocked ? '🚧 ' : '') + edge.id + '</div>' }), interactive: false }).addTo(streetsLayer);
-    if (edge.reason === 'fire') {
-      L.marker(mid, { icon: L.divIcon({ className: '', html: '<div class="fire-marker">🔥<span>RUA BLOQUEADA</span></div>' }), interactive: false }).addTo(streetsLayer);
+    const latLngs = edgeLatLngs(edge);
+    const mid = latLngs[Math.floor(latLngs.length / 2)];
+    if (edge.blocked && edge.reason !== 'fire') {
+      L.marker(mid, { icon: L.divIcon({ className: '', html: '<div class="block-marker">🚧</div>' }), interactive: false }).addTo(streetsLayer);
+    } else if (edge.reason === 'fire') {
+      L.marker(mid, { icon: L.divIcon({ className: '', html: '<div class="fire-marker">🔥<span>EMERGENCIA NA RUA</span></div>' }), interactive: false }).addTo(streetsLayer);
     }
   }
 }
@@ -319,9 +312,10 @@ function renderStreets() {
 function renderNodes() {
   nodesLayer.clearLayers();
   for (const node of mapModel.getNodes()) {
+    if (node.type !== 'exit' && !node.id.startsWith('dyn-')) continue;
     const p = nodeLatLng(node);
     L.marker([p.lat, p.lng], {
-      icon: L.divIcon({ className: '', html: '<div class="node ' + (node.type === 'exit' ? 'exit' : '') + '"></div><div class="node-label">' + node.id + '</div>' }),
+      icon: L.divIcon({ className: '', html: '<div class="node ' + (node.type === 'exit' ? 'exit' : '') + '"></div><div class="node-label">' + (node.type === 'exit' ? 'SAIDA' : '') + '</div>' }),
       title: node.name
     }).addTo(nodesLayer);
   }
@@ -345,7 +339,7 @@ function renderAgents() {
   for (const agent of agents) {
     if (agent.state === AGENT_STATES.EVACUATED) continue;
     const p = xyToLatLng(agent.x, agent.y);
-    const html = '<div class="agent-token ' + agent.type + ' ' + agent.state.toLowerCase() + '">' + (agent.type === 'car' ? '🚗' : '🧍') + '</div>';
+    const html = '<div class="agent-token person ' + agent.state.toLowerCase() + '"></div>';
     L.marker([p.lat, p.lng], { icon: L.divIcon({ className: '', html, iconSize: [24, 24], iconAnchor: [12, 12] }), interactive: false }).addTo(agentsLayer);
   }
 }
@@ -447,32 +441,41 @@ function buildExtraControls() {
   tools.forEach(btn => {
     btn.addEventListener('click', () => {
       const tool = btn.dataset.tool;
+      if (activeTool === tool) {
+        finishTool();
+        addLog('ferramenta cancelada');
+        return;
+      }
       activeTool = tool;
       document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b === btn));
       mapCanvas.classList.add('tool-active');
-      addLog('clique em uma rua para: ' + btn.textContent.trim());
+      const label = tool === 'bloqueio' ? 'CLIQUE EM UMA RUA PARA BLOQUEAR'
+        : tool === 'incendio' ? 'CLIQUE EM UMA RUA PARA CRIAR O INCENDIO'
+        : tool === 'saida' ? 'CLIQUE EM UMA RUA PARA MARCAR SAIDA SEGURA'
+        : 'Clique em uma rua';
+      addLog(label);
     });
   });
   const panel = tools[0]?.parentElement;
   if (!panel) return;
-  const edgeSelect = document.createElement('select');
-  edgeSelect.className = 'edge-select';
-  edgeSelect.innerHTML = mapModel.getEdges().map(e => '<option value="' + e.id + '">' + e.id + ' · ' + e.name + '</option>').join('');
-  edgeSelect.value = selectedEdgeId;
-  edgeSelect.addEventListener('change', () => { selectedEdgeId = edgeSelect.value; renderAll(); });
-  panel.insertBefore(edgeSelect, tools[0]);
 
   const fireBtn = document.createElement('button');
-  fireBtn.className = 'btn ghost';
-  fireBtn.textContent = '🔥 Iniciar incêndio';
-  fireBtn.addEventListener('click', () => { activeTool = 'incendio'; mapCanvas.classList.add('tool-active'); addLog('clique na rua onde o incêndio começou'); });
-  panel.appendChild(fireBtn);
-
-  const carBtn = document.createElement('button');
-  carBtn.className = 'btn ghost';
-  carBtn.textContent = '🚗 Adicionar carro';
-  carBtn.addEventListener('click', () => { activeTool = 'carro'; mapCanvas.classList.add('tool-active'); addLog('clique em uma rua para colocar o carro'); });
-  panel.appendChild(carBtn);
+  fireBtn.className = 'tool-btn fire-tool';
+  fireBtn.type = 'button';
+  fireBtn.dataset.tool = 'incendio';
+  fireBtn.innerHTML = '<span class="ic danger">🔥</span> Incendio';
+  tools[0].parentElement.insertBefore(fireBtn, tools[0].nextSibling);
+  fireBtn.addEventListener('click', () => {
+    if (activeTool === 'incendio') {
+      finishTool();
+      addLog('ferramenta cancelada');
+      return;
+    }
+    activeTool = 'incendio';
+    document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b === fireBtn));
+    mapCanvas.classList.add('tool-active');
+    addLog('CLIQUE EM UMA RUA PARA CRIAR O INCENDIO');
+  });
 
   const clearBtn = document.createElement('button');
   clearBtn.className = 'btn ghost';
@@ -569,16 +572,25 @@ function wireUi() {
     }
     if (activeTool === 'bloqueio') blockEdge(snap.edge.id, 'block');
     if (activeTool === 'incendio') blockEdge(snap.edge.id, 'fire');
-    if (activeTool === 'pessoa' || activeTool === 'carro') addAgent(activeTool === 'carro' ? 'car' : 'person', snap.nearestNode, getExitId(), snap.point);
+    if (activeTool === 'pessoa') {
+      const personNode = mapModel.addPointOnEdge(snap.edge.id, snap, 'normal', 'Origem pessoa ' + nextAgentId);
+      if (personNode) {
+        rebuildGraph();
+        addAgent('person', personNode.id, getExitId(), { x: personNode.x, y: personNode.y });
+      }
+    }
     if (activeTool === 'saida') {
-      const agent = agents.find(a => a.id === selectedAgentId) || agents.find(a => a.state !== AGENT_STATES.EVACUATED);
-      if (agent) {
-        agent.destinationNode = snap.nearestNode;
-        agent.destinationPoint = { ...snap.point };
-        planAgent(agent, true);
-        addLog('saída segura definida para agente ' + agent.id + ' em ' + snap.edge.name);
-      } else {
-        addLog('<span class="warn">adicione um agente antes de definir a saída</span>');
+      const exitNode = mapModel.addPointOnEdge(snap.edge.id, snap, 'exit', 'SAIDA SEGURA');
+      if (exitNode) {
+        safeExitNodeId = exitNode.id;
+        rebuildGraph();
+        for (const agent of agents) {
+          if (agent.state === AGENT_STATES.EVACUATED) continue;
+          agent.destinationNode = exitNode.id;
+          agent.destinationPoint = { x: exitNode.x, y: exitNode.y };
+          planAgent(agent, true);
+        }
+        addLog('SAIDA SEGURA marcada em ' + snap.edge.name);
       }
     }
     finishTool();
@@ -586,11 +598,25 @@ function wireUi() {
   });
 }
 
-setupThemeAndTutorial();
-buildExtraControls();
-wireUi();
-resetSimulation();
-requestAnimationFrame(frame);
+async function init() {
+  setupThemeAndTutorial();
+  try {
+    addLog('carregando rede viaria real do OpenStreetMap...');
+    await mapModel.loadRealRoads();
+    rebuildGraph();
+    leafletMap.fitBounds([[mapModel.geoBounds.south, mapModel.geoBounds.west], [mapModel.geoBounds.north, mapModel.geoBounds.east]]);
+    addLog('OSM carregado com sucesso');
+  } catch (error) {
+    addLog('<span class="warn">OSM indisponivel; usando malha local de fallback</span>');
+    console.warn(error);
+  }
+  buildExtraControls();
+  wireUi();
+  resetSimulation();
+  requestAnimationFrame(frame);
+}
+
+init();
 
 
 
