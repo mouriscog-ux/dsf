@@ -1619,11 +1619,10 @@
       console.warn('API local indisponível; tentando Overpass diretamente', e);
     }
 
-    // Ao rodar com o servidor local, uma resposta inválida significa que a
-    // Overpass falhou no servidor. Não repita as mesmas chamadas no navegador:
-    // a consulta direta no navegador repetiria a mesma falha e atrasaria a inicialização.
-    // Use a malha local e mantenha a simulação disponível imediatamente.
-    if (!apiGraph && !isUsingLocalServer()) {
+    // Em algumas redes, o processo Node não tem saída para a internet, mas o
+    // navegador tem. Quando /api/graph falhar, tente o Overpass diretamente
+    // também no localhost; se ambos falharem, a malha local continua ativa.
+    if (!apiGraph) {
       try {
         apiGraph = await fetchGraphFromOverpass();
         addLog('Grafo do bairro carregado diretamente do OpenStreetMap');
@@ -1631,8 +1630,6 @@
         console.warn('OpenStreetMap indisponível; usando malha de contingência', e);
         addLog('<span class="warn">API de ruas indisponível — usando mapa de contingência</span>');
       }
-    } else if (!apiGraph) {
-      addLog('<span class="warn">OSM indisponível nesta rede — usando malha local do cenário</span>');
     }
 
     if (apiGraph && apiGraph.nodes.length > 0 && apiGraph.edges.length > 0) {
