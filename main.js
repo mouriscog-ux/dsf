@@ -218,6 +218,26 @@
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(leafletMap);
 
+  function fitMapToGraphNodes() {
+    var graphPoints = nodes.filter(function (node) {
+      return Number.isFinite(node.lat) && Number.isFinite(node.lng);
+    }).map(function (node) {
+      return [node.lat, node.lng];
+    });
+
+    if (graphPoints.length === 0) return;
+
+    // Mostra apenas a região realmente usada pela malha e uma margem discreta
+    // para que os nós das extremidades não sejam cortados.
+    var graphBounds = L.latLngBounds(graphPoints).pad(0.06);
+    leafletMap.setMaxBounds(graphBounds);
+    leafletMap.fitBounds(graphBounds, {
+      padding: [0, 0],
+      maxZoom: 19,
+      animate: false
+    });
+  }
+
   // Camadas redesenhadas a cada frame da simulação
   var streetsLayer  = L.layerGroup().addTo(leafletMap); // arestas do grafo (ruas)
   var nodesLayer     = L.layerGroup().addTo(leafletMap); // cruzamentos / bloqueios
@@ -1604,6 +1624,8 @@
       edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
       addLog('Malha viária da API aplicada: ' + nodes.length + ' nós e ' + edges.length + ' segmentos');
     }
+
+    fitMapToGraphNodes();
 
     applySpeed(1.5);
     randomizeExits();
