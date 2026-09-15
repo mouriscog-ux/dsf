@@ -172,7 +172,7 @@ function runPathfinding(startId, goalId = null, blockedIds = [], useHeuristic = 
 async function fetchOSMData(south, west, north, east) {
   const query = `
     [out:json];
-    way["highway"](${south},${west},${north},${east});
+    way["highway"~"^(primary|secondary|tertiary|residential|unclassified|living_street|service|pedestrian)$"](${south},${west},${north},${east});
     out body;
     >;
     out skel qt;

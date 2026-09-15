@@ -152,9 +152,8 @@
   // O grafo do simulador vive num espaço "modelo" abstrato (x,y em metros aproximados).
   // Aqui definimos a correspondência entre esse espaço abstrato e a área geográfica
   // real do Bairro da Liberdade (SP), para desenhar tudo em cima do mapa de verdade.
-  // A malha do simulador ocupa aproximadamente 400 m no eixo leste-oeste e
-  // 300 m no eixo norte-sul. Esses limites evitam navegar por ruas que não
-  // fazem parte do cenário.
+  // Área de simulação: aproximadamente 400 m no eixo leste-oeste e 300 m no
+  // eixo norte-sul. Há espaço para desvios, sem carregar o bairro inteiro.
   var MODEL_BOUNDS = { minX: 40, maxX: 440, minY: 40, maxY: 340 };
   var GEO_BOUNDS = { south: -23.55830, north: -23.55560, west: -46.63631, east: -46.63239 };
 
@@ -724,7 +723,9 @@
   // existe na versão publicada. Esta rota de contingência consulta o OSM no
   // navegador e tenta mais de um espelho do Overpass, pois a API pode responder 504.
   async function fetchGraphFromOverpass() {
-    var query = '[out:json];way["highway"](' +
+    // Ruas adequadas para circulação; ignora calçadas, trilhas e microvias
+    // que aumentam o grafo sem melhorar as rotas de evacuação.
+    var query = '[out:json];way["highway"~"^(primary|secondary|tertiary|residential|unclassified|living_street|service|pedestrian)$"](' +
       GEO_BOUNDS.south + ',' + GEO_BOUNDS.west + ',' + GEO_BOUNDS.north + ',' + GEO_BOUNDS.east +
       ');out body;>;out skel qt;';
     var endpoints = [
