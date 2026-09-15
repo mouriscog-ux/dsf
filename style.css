@@ -1126,20 +1126,50 @@ button.nav-btn.theme-toggle:hover {
 }
 
 .agent-token {
-  width: 26px;
-  height: 26px;
+  width: 19px;
+  height: 19px;
   display: grid;
   place-items: center;
+  border-radius: 999px;
+  background: var(--amber);
+  border: 2px solid #fff;
+  box-shadow: 0 3px 9px rgba(15, 23, 42, 0.28);
+  font-size: 0;
+}
+
+.agent-token.person::after {
+  content: "";
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: #ffffff;
-  border: 2px solid var(--amber);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.22);
-  font-size: 15px;
+  background: #fff;
+  box-shadow: 0 6px 0 -1px #fff;
 }
 
 .agent-token.car {
   border-color: var(--cyan);
-  background: #e0f2fe;
+  background: var(--cyan);
+  width: 24px;
+  height: 15px;
+  border-radius: 5px;
+}
+
+.agent-token.car::before,
+.agent-token.car::after {
+  content: "";
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #111827;
+  bottom: -3px;
+}
+
+.agent-token.car::before { left: 4px; }
+.agent-token.car::after { right: 4px; }
+
+.agent-token.moving {
+  outline: 2px solid rgba(0, 230, 118, 0.35);
 }
 
 .agent-token.blocked {
@@ -1164,4 +1194,35 @@ button.nav-btn.theme-toggle:hover {
 .fire-marker span {
   font-size: 9px;
   letter-spacing: 0.4px;
+}
+
+.safe-marker {
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: var(--safe);
+  color: #041017;
+  border: 2px solid #fff;
+  box-shadow: 0 0 14px var(--safe);
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.mini-status {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mini-status strong {
+  color: var(--cyan);
+  font-family: 'JetBrains Mono', monospace;
 }

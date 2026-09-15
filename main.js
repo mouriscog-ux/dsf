@@ -22,6 +22,9 @@ let timer = null;
 let lastFrame = 0;
 let lastPathResult = null;
 let dijkstraResult = null;
+let activeTool = null;
+let selectedAgentId = null;
+let recalculationCount = 0;
 
 const qs = (id) => document.getElementById(id);
 const statusDot = qs('status-dot');
@@ -86,6 +89,72 @@ function distanceAlong(points) {
   return total || 1;
 }
 
+function closestPointOnSegment(p, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy || 1;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq));
+  return { x: a.x + dx * t, y: a.y + dy * t, t, distance: Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t)) };
+}
+
+function snapToRoad(xy) {
+  let best = null;
+  for (const edge of mapModel.getEdges()) {
+    const points = mapModel.getEdgeGeometry(edge);
+    for (let i = 1; i < points.length; i++) {
+      const projected = closestPointOnSegment(xy, points[i - 1], points[i]);
+      if (!best || projected.distance < best.distance) {
+        const fromNode = getNode(edge.from);
+        const toNode = getNode(edge.to);
+        const fromDistance = Math.hypot(projected.x - fromNode.x, projected.y - fromNode.y);
+        const toDistance = Math.hypot(projected.x - toNode.x, projected.y - toNode.y);
+        best = { edge, point: { x: projected.x, y: projected.y }, distance: projected.distance, nearestNode: fromDistance <= toDistance ? edge.from : edge.to };
+      }
+    }
+  }
+  return best;
+}
+
+function orientedGeometry(edge, fromId) {
+  const points = mapModel.getEdgeGeometry(edge).map(p => ({ ...p }));
+  return edge.from === fromId ? points : points.reverse();
+}
+
+function buildTrack(agent, path) {
+  const track = [{ ...agent.originPoint }];
+  for (let i = 1; i < path.length; i++) {
+    const edge = mapModel.getEdge(path[i - 1], path[i]);
+    if (!edge) continue;
+    const points = orientedGeometry(edge, path[i - 1]);
+    for (const point of points) {
+      const previous = track[track.length - 1];
+      if (!previous || Math.hypot(previous.x - point.x, previous.y - point.y) > 0.5) track.push({ ...point });
+    }
+  }
+  const last = track[track.length - 1];
+  if (agent.destinationPoint && (!last || Math.hypot(last.x - agent.destinationPoint.x, last.y - agent.destinationPoint.y) > 0.5)) {
+    track.push({ ...agent.destinationPoint });
+  }
+  return track;
+}
+
+function pointOnTrack(points, distance) {
+  const total = distanceAlong(points);
+  const target = Math.max(0, Math.min(total, distance));
+  let walked = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    if (walked + len >= target) {
+      const t = (target - walked) / len;
+      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    }
+    walked += len;
+  }
+  return points[points.length - 1] || { x: 0, y: 0 };
+}
+
 function pointAtProgress(edge, progress, fromId) {
   let points = mapModel.getEdgeGeometry(edge).map(p => ({ ...p }));
   if (edge.to === fromId) points = points.reverse();
@@ -130,37 +199,46 @@ function isPathValid(agent) {
 }
 
 function planAgent(agent, announce = false) {
-  const result = bestPath(agent.currentNode, agent.destination, 'astar');
+  const result = bestPath(agent.currentNode, agent.destinationNode, 'astar');
   lastPathResult = result;
-  dijkstraResult = bestPath(agent.currentNode, agent.destination, 'dijkstra');
+  dijkstraResult = bestPath(agent.currentNode, agent.destinationNode, 'dijkstra');
   if (!result) {
     agent.state = AGENT_STATES.BLOCKED;
     agent.route = [agent.currentNode];
     agent.routeIndex = 0;
     agent.segmentProgress = 0;
+    agent.track = [{ x: agent.x, y: agent.y }];
+    agent.trackProgress = 0;
     if (announce) addLog('<span class="warn">rota impossível para agente ' + agent.id + '</span>');
     return false;
   }
   agent.route = result.path;
   agent.routeIndex = 0;
   agent.segmentProgress = 0;
+  agent.track = buildTrack(agent, result.path);
+  agent.trackProgress = 0;
   agent.state = AGENT_STATES.MOVING;
   if (announce) addLog('nova rota: ' + result.path.join(' → '));
   return true;
 }
 
-function addAgent(type = 'person', startNode = 'A', destinationNode = getExitId()) {
+function addAgent(type = 'person', startNode = 'A', destinationNode = getExitId(), originPoint = null, destinationPoint = null) {
   const start = getNode(startNode) || getNode('A');
-  const offset = (nextAgentId % 7 - 3) * 4;
+  const destination = getNode(destinationNode) || getNode(getExitId());
+  const offset = 0;
   const agent = {
-    id: nextAgentId++, type, currentNode: start.id, destination: destinationNode,
+    id: nextAgentId++, type, currentNode: start.id, destinationNode: destination.id,
     route: [], routeIndex: 0, segmentProgress: 0, speed: type === 'car' ? 80 : 48 + (nextAgentId % 4) * 5,
-    state: AGENT_STATES.IDLE, x: start.x, y: start.y + offset, offset
+    state: AGENT_STATES.IDLE, x: originPoint?.x ?? start.x, y: (originPoint?.y ?? start.y) + offset, offset,
+    originPoint: originPoint ? { ...originPoint } : { x: start.x, y: start.y },
+    destinationPoint: destinationPoint ? { ...destinationPoint } : { x: destination.x, y: destination.y },
+    track: [], trackProgress: 0
   };
   agents.push(agent);
   planAgent(agent);
   updateStats();
-  addLog((type === 'car' ? 'carro' : 'pessoa') + ' adicionad' + (type === 'car' ? 'o' : 'a') + ' em ' + start.id + ' rumo a ' + destinationNode);
+  selectedAgentId = agent.id;
+  addLog((type === 'car' ? 'carro' : 'pessoa') + ' ' + agent.id + ' adicionad' + (type === 'car' ? 'o' : 'a') + ' em ' + start.name);
   return agent;
 }
 window.addAgent = addAgent;
@@ -171,7 +249,7 @@ function replanAll(reason) {
   let redirected = 0;
   for (const agent of agents) {
     if (agent.state === AGENT_STATES.EVACUATED) continue;
-    if (planAgent(agent)) redirected++;
+    if (planAgent(agent)) { redirected++; recalculationCount++; }
   }
   addLog(redirected ? 'agentes redirecionados: ' + redirected + ' (' + reason + ')' : '<span class="warn">nenhuma rota segura disponível</span>');
   renderAll();
@@ -196,6 +274,9 @@ function resetSimulation() {
   fireEdgeId = 'BE';
   lastPathResult = null;
   dijkstraResult = null;
+  activeTool = null;
+  selectedAgentId = null;
+  recalculationCount = 0;
   logList.innerHTML = '';
   addAgent('person', 'A', 'I');
   addAgent('person', 'D', 'I');
@@ -248,10 +329,14 @@ function renderNodes() {
 
 function renderRoutes() {
   routesLayer.clearLayers();
-  const primary = agents.find(a => a.state !== AGENT_STATES.EVACUATED && a.route.length > 1);
-  if (!primary) return;
-  for (const edge of routeEdges(primary.route)) {
-    L.polyline(edgeLatLngs(edge), { color: '#00e676', weight: 4, opacity: 0.95, dashArray: '9 7', lineCap: 'round' }).addTo(routesLayer);
+  for (const agent of agents) {
+    if (agent.state === AGENT_STATES.EVACUATED || !agent.track || agent.track.length < 2) continue;
+    const color = agent.id === selectedAgentId ? '#00e676' : '#38bdf8';
+    L.polyline(agent.track.map(p => xyToLatLng(p.x, p.y)), { color, weight: agent.id === selectedAgentId ? 5 : 3, opacity: 0.8, dashArray: '9 7', lineCap: 'round' }).addTo(routesLayer);
+    if (agent.destinationPoint) {
+      const exit = xyToLatLng(agent.destinationPoint.x, agent.destinationPoint.y);
+      L.marker([exit.lat, exit.lng], { icon: L.divIcon({ className: '', html: '<div class="safe-marker">✓</div>' }), interactive: false }).addTo(routesLayer);
+    }
   }
 }
 
@@ -292,6 +377,9 @@ function updateStats() {
   statCusto.textContent = lastPathResult ? Math.round(lastPathResult.cost) : '—';
   statFireAstar.textContent = lastPathResult ? (lastPathResult.nodesExplored + ' nós') : '—';
   statFireDijkstra.textContent = dijkstraResult ? (dijkstraResult.nodesExplored + ' nós') : '—';
+  const blocked = mapModel.getEdges().filter(e => e.blocked).length;
+  const statusPanel = document.getElementById('live-status-summary');
+  if (statusPanel) statusPanel.innerHTML = '<div>Agentes: <strong>' + agents.length + '</strong></div><div>Ruas bloqueadas: <strong>' + blocked + '</strong></div><div>Rotas recalculadas: <strong>' + recalculationCount + '</strong></div>';
 }
 
 let chartHistory = [];
@@ -316,26 +404,17 @@ function moveAgent(agent, dt) {
     planAgent(agent, true);
     return;
   }
-  if (agent.routeIndex >= agent.route.length - 1) return;
-  const from = agent.route[agent.routeIndex];
-  const to = agent.route[agent.routeIndex + 1];
-  const edge = mapModel.getEdge(from, to);
-  if (!edge || edge.blocked) { agent.state = AGENT_STATES.BLOCKED; planAgent(agent, true); return; }
-  agent.segmentProgress += (agent.speed * speed * dt) / edge.weight;
-  if (agent.segmentProgress >= 1) {
-    agent.currentNode = to;
-    agent.routeIndex++;
-    agent.segmentProgress = 0;
-    const node = getNode(to);
-    agent.x = node.x;
-    agent.y = node.y + agent.offset;
-    if (to === agent.destination || node.type === 'exit') {
-      agent.state = AGENT_STATES.EVACUATED;
-      addLog('✓ evacuação concluída: agente ' + agent.id + ' chegou à saída segura');
-    }
+  agent.trackProgress += agent.speed * speed * dt;
+  const total = distanceAlong(agent.track);
+  if (agent.trackProgress >= total) {
+    agent.x = agent.destinationPoint.x;
+    agent.y = agent.destinationPoint.y + agent.offset;
+    agent.currentNode = agent.destinationNode;
+    agent.state = AGENT_STATES.EVACUATED;
+    addLog('✓ evacuação concluída: agente ' + agent.id + ' chegou à saída segura');
     return;
   }
-  const p = pointAtProgress(edge, agent.segmentProgress, from);
+  const p = pointOnTrack(agent.track, agent.trackProgress);
   agent.x = p.x;
   agent.y = p.y + agent.offset;
 }
@@ -364,14 +443,14 @@ function startTimer() {
 function stopTimer() { if (timer) clearInterval(timer); timer = null; }
 
 function buildExtraControls() {
-  const scenarioTitle = document.querySelector('.panel-title.spaced + .tool-btn')?.parentElement;
   const tools = document.querySelectorAll('.tool-btn');
   tools.forEach(btn => {
     btn.addEventListener('click', () => {
       const tool = btn.dataset.tool;
-      if (tool === 'bloqueio') blockEdge(selectedEdgeId, 'block');
-      if (tool === 'pessoa') { addAgent('person', ['A', 'D', 'G', 'B'][nextAgentId % 4], 'I'); renderAll(); }
-      if (tool === 'saida') addLog('saída segura atual: nó I. Use window.addAgent(tipo, origem, destino) para testar outra saída.');
+      activeTool = tool;
+      document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b === btn));
+      mapCanvas.classList.add('tool-active');
+      addLog('clique em uma rua para: ' + btn.textContent.trim());
     });
   });
   const panel = tools[0]?.parentElement;
@@ -386,14 +465,34 @@ function buildExtraControls() {
   const fireBtn = document.createElement('button');
   fireBtn.className = 'btn ghost';
   fireBtn.textContent = '🔥 Iniciar incêndio';
-  fireBtn.addEventListener('click', () => blockEdge(fireEdgeId || selectedEdgeId, 'fire'));
+  fireBtn.addEventListener('click', () => { activeTool = 'incendio'; mapCanvas.classList.add('tool-active'); addLog('clique na rua onde o incêndio começou'); });
   panel.appendChild(fireBtn);
 
   const carBtn = document.createElement('button');
   carBtn.className = 'btn ghost';
-  carBtn.textContent = '➕ Adicionar carro';
-  carBtn.addEventListener('click', () => { addAgent('car', ['A', 'B', 'D'][nextAgentId % 3], 'I'); renderAll(); });
+  carBtn.textContent = '🚗 Adicionar carro';
+  carBtn.addEventListener('click', () => { activeTool = 'carro'; mapCanvas.classList.add('tool-active'); addLog('clique em uma rua para colocar o carro'); });
   panel.appendChild(carBtn);
+
+  const clearBtn = document.createElement('button');
+  clearBtn.className = 'btn ghost';
+  clearBtn.textContent = '🚧 Remover bloqueio selecionado';
+  clearBtn.addEventListener('click', () => {
+    const edge = mapModel.setEdgeBlocked(selectedEdgeId, false);
+    if (edge) { rebuildGraph(); addLog('bloqueio removido em ' + edge.name); replanAll(edge.name); }
+  });
+  panel.appendChild(clearBtn);
+
+  const liveStatus = document.createElement('div');
+  liveStatus.id = 'live-status-summary';
+  liveStatus.className = 'mini-status';
+  panel.appendChild(liveStatus);
+}
+
+function finishTool() {
+  activeTool = null;
+  mapCanvas.classList.remove('tool-active');
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
 }
 
 
@@ -460,14 +559,30 @@ function wireUi() {
   }
   leafletMap.on('click', evt => {
     const xy = latLngToXY(evt.latlng.lat, evt.latlng.lng);
-    let best = null; let bestDistance = Infinity;
-    for (const edge of mapModel.getEdges()) {
-      for (const p of mapModel.getEdgeGeometry(edge)) {
-        const d = Math.hypot(p.x - xy.x, p.y - xy.y);
-        if (d < bestDistance) { bestDistance = d; best = edge; }
+    const snap = snapToRoad(xy);
+    if (!snap) return;
+    selectedEdgeId = snap.edge.id;
+    if (!activeTool) {
+      addLog('rua selecionada: ' + snap.edge.name);
+      renderAll();
+      return;
+    }
+    if (activeTool === 'bloqueio') blockEdge(snap.edge.id, 'block');
+    if (activeTool === 'incendio') blockEdge(snap.edge.id, 'fire');
+    if (activeTool === 'pessoa' || activeTool === 'carro') addAgent(activeTool === 'carro' ? 'car' : 'person', snap.nearestNode, getExitId(), snap.point);
+    if (activeTool === 'saida') {
+      const agent = agents.find(a => a.id === selectedAgentId) || agents.find(a => a.state !== AGENT_STATES.EVACUATED);
+      if (agent) {
+        agent.destinationNode = snap.nearestNode;
+        agent.destinationPoint = { ...snap.point };
+        planAgent(agent, true);
+        addLog('saída segura definida para agente ' + agent.id + ' em ' + snap.edge.name);
+      } else {
+        addLog('<span class="warn">adicione um agente antes de definir a saída</span>');
       }
     }
-    if (best) { selectedEdgeId = best.id; addLog('rua selecionada: ' + best.name); renderAll(); }
+    finishTool();
+    renderAll();
   });
 }
 
