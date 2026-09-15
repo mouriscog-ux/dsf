@@ -633,9 +633,13 @@
   }
 
   function getApiUrl(endpoint) {
-    if (window.location.protocol === 'file:' || (window.location.port && window.location.port !== '8080')) {
-      return 'http://localhost:8080' + endpoint;
-    }
+    // A API é entregue pelo mesmo servidor que hospeda a interface. Usar uma
+    // URL relativa mantém a comunicação funcionando em qualquer porta e em
+    // uma publicação remota. Para abrir o HTML diretamente, ou usar outro
+    // backend no desenvolvimento, defina window.SMART_EVAC_API_BASE_URL.
+    var configuredBaseUrl = window.SMART_EVAC_API_BASE_URL;
+    if (configuredBaseUrl) return configuredBaseUrl.replace(/\/$/, '') + endpoint;
+    if (window.location.protocol === 'file:') return 'http://localhost:8080' + endpoint;
     return endpoint;
   }
 

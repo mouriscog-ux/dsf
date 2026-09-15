@@ -171,35 +171,39 @@ function runPathfinding(startId, goalId = null, blockedIds = [], useHeuristic = 
 async function fetchOSMData(south, west, north, east) {
   const query = `
     [out:json];
-
-    (
-      way["highway"](${south},${west},${north},${east});
-      way["building"](${south},${west},${north},${east});
-    );
-
+    way["highway"](${south},${west},${north},${east});
     out body;
     >;
     out skel qt;
   `;
 
-  const response = await fetch(
-    "https://overpass-api.de/api/interpreter",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/plain"
-      },
-      body: query
-    }
-  );
+  const endpoints = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter'
+  ];
+  const errors = [];
 
-  if (!response.ok) {
-    throw new Error(
-      `Overpass API error: ${response.status}`
-    );
+  for (const endpoint of endpoints) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: query,
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error(`respondeu ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      errors.push(`${endpoint}: ${error.message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
-  return await response.json();
+  throw new Error(`Serviços Overpass indisponíveis (${errors.join('; ')})`);
 }
 
 function processOSMData(data) {
