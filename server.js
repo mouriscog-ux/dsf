@@ -186,6 +186,7 @@ async function fetchOSMData(south, west, north, east) {
   const errors = [];
 
   for (const endpoint of endpoints) {
+    let postError;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
     try {
@@ -198,9 +199,26 @@ async function fetchOSMData(south, west, north, east) {
       if (!response.ok) throw new Error(`respondeu ${response.status}`);
       return await response.json();
     } catch (error) {
-      errors.push(`${endpoint}: ${error.message}`);
+      postError = error;
     } finally {
       clearTimeout(timeout);
+    }
+
+    // Algumas redes bloqueiam POST para o Overpass, mas permitem a mesma
+    // consulta como parâmetro GET. Tente essa alternativa antes do próximo espelho.
+    const getController = new AbortController();
+    const getTimeout = setTimeout(() => getController.abort(), 10000);
+    try {
+      const response = await fetch(`${endpoint}?data=${encodeURIComponent(query)}`, {
+        method: 'GET',
+        signal: getController.signal
+      });
+      if (!response.ok) throw new Error(`respondeu ${response.status}`);
+      return await response.json();
+    } catch (getError) {
+      errors.push(`${endpoint}: POST (${postError.message}); GET (${getError.message})`);
+    } finally {
+      clearTimeout(getTimeout);
     }
   }
 
