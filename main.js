@@ -152,10 +152,10 @@
   // O grafo do simulador vive num espaço "modelo" abstrato (x,y em metros aproximados).
   // Aqui definimos a correspondência entre esse espaço abstrato e a área geográfica
   // real do Bairro da Liberdade (SP), para desenhar tudo em cima do mapa de verdade.
-  // Área de simulação: aproximadamente 400 m no eixo leste-oeste e 300 m no
-  // eixo norte-sul. Há espaço para desvios, sem carregar o bairro inteiro.
+  // Limite manual do cenário: aproximadamente 300 m no eixo leste-oeste e
+  // 220 m no eixo norte-sul, cobrindo apenas as ruas usadas na simulação.
   var MODEL_BOUNDS = { minX: 40, maxX: 440, minY: 40, maxY: 340 };
-  var GEO_BOUNDS = { south: -23.55830, north: -23.55560, west: -46.63631, east: -46.63239 };
+  var GEO_BOUNDS = { south: -23.55785, north: -23.55587, west: -46.63565, east: -46.63272 };
 
   function getNodeByXY(x, y) {
     if (!nodes) return null;
@@ -217,21 +217,10 @@
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(leafletMap);
 
-  function fitMapToGraphNodes() {
-    var graphPoints = nodes.filter(function (node) {
-      return Number.isFinite(node.lat) && Number.isFinite(node.lng);
-    }).map(function (node) {
-      return [node.lat, node.lng];
-    });
-
-    if (graphPoints.length === 0) return;
-
-    // Mostra somente a região realmente usada pela malha. Uma margem em pixels
-    // preserva os ícones da borda sem revelar ruas fora do cenário.
-    var graphBounds = L.latLngBounds(graphPoints);
-    leafletMap.setMaxBounds(graphBounds);
+  function fitMapToScenarioBounds() {
+    // O tamanho do mapa é manual e não muda conforme a quantidade de nós.
     leafletMap.invalidateSize();
-    leafletMap.fitBounds(graphBounds, {
+    leafletMap.fitBounds(WALL_BOUNDS, {
       padding: [14, 14],
       maxZoom: 19,
       animate: false
@@ -1627,10 +1616,10 @@
       addLog('Malha viária da API aplicada: ' + nodes.length + ' nós e ' + edges.length + ' segmentos');
     }
 
-    fitMapToGraphNodes();
+    fitMapToScenarioBounds();
     // O Leaflet só conhece o tamanho final do painel depois do primeiro layout.
     // Repetir o enquadramento aqui evita manter o zoom inicial mais amplo.
-    setTimeout(fitMapToGraphNodes, 0);
+    setTimeout(fitMapToScenarioBounds, 0);
 
     applySpeed(1.5);
     randomizeExits();
