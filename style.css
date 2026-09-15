@@ -748,18 +748,6 @@ button.nav-btn.tutorial-trigger:hover {
   white-space: nowrap;
 }
 
-.landmark-badge {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text);
-  background: rgba(30, 41, 59, 0.85);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 3px 8px;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
 .map-legend {
   display: flex;
   gap: 16px;

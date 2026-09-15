@@ -124,9 +124,9 @@
 
   var DEFAULT_LOG = [
     'URBANISA TECH iniciada — 50 agentes',
-    '<span class="warn">Bloqueio em R. Galvão Bueno (Viaduto Osaka)</span>',
+    '<span class="warn">Bloqueio registrado na malha viária</span>',
     'Agentes calculando rota via A*',
-    '<span class="hl">Agente evacuou via Metrô Liberdade</span>'
+    '<span class="hl">Agente evacuou por uma saída segura</span>'
   ];
   var MAX_LOG_LINES = 6;
 
@@ -243,7 +243,6 @@
   var routesLayer    = L.layerGroup().addTo(leafletMap); // rotas calculadas pelo A*
   var agentsLayer    = L.layerGroup().addTo(leafletMap); // pessoas em evacuação
   var costTagsLayer  = L.layerGroup().addTo(leafletMap); // rótulos f(n)/g(n)/h(n)
-  var landmarksLayer = L.layerGroup().addTo(leafletMap); // marcos turísticos (estáticos)
 
   /* ---------- 4. GRAFO VIA API ---------- */
   // A simulação não possui malha embarcada: estes dados só são preenchidos
@@ -251,28 +250,10 @@
   var apiInitialNodes = [];
   var apiInitialEdges = [];
 
-  var LANDMARKS = [
-    { text: '🏮 Portal Liberdade', x: 60, y: 90 },
-    { text: '🚇 Metrô Liberdade', x: 340, y: 70 },
-    { text: '🏙️ Praça da Liberdade', x: 300, y: 180 },
-    { text: '🌉 Viaduto Osaka', x: 140, y: 60 }
-  ];
-
   var nodes = [];
   var edges = [];
   var activeFires = [];
   var lastFireComparison = null;
-
-  // Marcos turísticos não mudam de posição — desenhamos uma única vez sobre o mapa real
-  LANDMARKS.forEach(function (lm) {
-    var p = xyToLatLng(lm.x, lm.y);
-    var icon = L.divIcon({
-      className: '',
-      html: '<div class="landmark-badge">' + lm.text + '</div>',
-      iconSize: null
-    });
-    L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(landmarksLayer);
-  });
 
   function getNode(id) {
     for (var i = 0; i < nodes.length; i++) {

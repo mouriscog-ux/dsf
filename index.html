@@ -56,7 +56,7 @@
         <p>
           O simulador representa a malha viária real do <strong>Bairro da Liberdade (São Paulo)</strong>. Cada cruzamento
           é um <em>nó</em> e cada rua é uma <em>aresta ponderada pela distância</em>. As saídas seguras representam
-          pontos como a <strong>Estação Metrô Liberdade</strong>  e a <strong>Praça da Liberdade</strong>.
+          pontos seguros definidos dinamicamente a partir da malha carregada pela API.
         </p>
         <div class="slide-visual">
           <span class="swatch safe"></span> Saída Segura &nbsp;&nbsp;
@@ -243,9 +243,9 @@
         <div class="panel-title">Log de eventos</div>
         <div class="log" id="log-list">
           <div>&gt; URBANISA TECH iniciada — 50 agentes</div>
-          <div> &gt; <span class="warn">Bloqueio em R. Galvão Bueno (Viaduto Osaka)</span></div>
+          <div> &gt; <span class="warn">Bloqueio registrado na malha viária</span></div>
           <div>&gt; Agentes recalculando rota via A*</div>
-          <div>&gt; <span class="hl">Agente chegou à saída Metrô Liberdade</span></div>
+          <div>&gt; <span class="hl">Agente chegou a uma saída segura</span></div>
         </div>
       </div>
 
@@ -316,7 +316,6 @@
         <div class="field"><span>Nós (cruzamentos)</span><span class="val">12 principais</span></div>
         <div class="field"><span>Arestas (trechos viários)</span><span class="val">15 conexões</span></div>
         <div class="field"><span>Saídas de Emergência</span><span class="val">Metrô, Praça, Av. Liberdade</span></div>
-        <div class="field"><span>Marcos Turísticos</span><span class="val">Portal Lanternas, Viaduto Osaka</span></div>
       </div>
 
       <div class="panel">
