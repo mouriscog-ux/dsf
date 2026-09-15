@@ -801,8 +801,21 @@
     // Desenhos traçados de ruas e rotas sobre o mapa foram removidos
     // para exibir o mapa limpo com marcadores e agentes.
 
-    // Os nós continuam no grafo e nos cálculos, mas não são renderizados no mapa.
-    // Assim, o clique chega diretamente ao mapa para as ferramentas de cenário.
+    // Nós comuns ficam invisíveis; apenas elementos relevantes ao cenário são exibidos.
+    nodes.forEach(function (n) {
+      if (n.type !== 'exit' && n.type !== 'blocked') return;
+
+      var p = xyToLatLng(n.x, n.y);
+      var icon = L.divIcon({
+        className: '',
+        html: '<div class="node ' + n.type + '" title="' + n.name.replace(/"/g, '&quot;') + '"></div>',
+        iconSize: [13, 13],
+        iconAnchor: [6.5, 6.5]
+      });
+
+      // O marcador não intercepta os cliques das ferramentas do mapa.
+      L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(nodesLayer);
+    });
 
     // Desenha os agentes (pessoas evacuando) em tempo real nas ruas do Leaflet
     updateAgentMarkers();
