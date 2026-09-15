@@ -7,6 +7,54 @@
 (function () {
   'use strict';
 
+  /* ---------- 0. TEMA CLARO / ESCURO ---------- */
+  var THEME_STORAGE_KEY = 'urbanisa-theme';
+  var themeToggle = document.getElementById('theme-toggle');
+
+  function getSavedTheme() {
+    try {
+      return localStorage.getItem(THEME_STORAGE_KEY);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function saveTheme(theme) {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch (err) {
+      // O navegador pode bloquear armazenamento em modo privado.
+    }
+  }
+
+  function updateThemeButton(theme) {
+    if (!themeToggle) return;
+    var isDark = theme === 'dark';
+    themeToggle.setAttribute('aria-label', isDark ? 'Alternar para Modo Claro' : 'Alternar para Modo Escuro');
+    themeToggle.setAttribute('aria-pressed', String(isDark));
+    themeToggle.innerHTML = '<span class="theme-toggle-icon" aria-hidden="true">' + (isDark ? '☀️' : '🌙') + '</span>' +
+      '<span class="theme-toggle-text">' + (isDark ? 'Modo Claro' : 'Modo Escuro') + '</span>';
+  }
+
+  function applyTheme(theme, shouldSave) {
+    var nextTheme = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', nextTheme);
+    updateThemeButton(nextTheme);
+    if (shouldSave) saveTheme(nextTheme);
+  }
+
+  applyTheme(getSavedTheme() || 'light', false);
+  window.setTimeout(function () {
+    document.documentElement.classList.add('theme-ready');
+  }, 0);
+
+  if (themeToggle) {
+    themeToggle.addEventListener('click', function () {
+      var currentTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      applyTheme(currentTheme === 'dark' ? 'light' : 'dark', true);
+    });
+  }
+
   /* ---------- 1. MODAL URBANISA TECH & TUTORIAL DA FEIRA ---------- */
   var urbanisaModal   = document.getElementById('urbanisa-modal');
   var tutorialModal   = document.getElementById('tutorial-modal');
@@ -71,7 +119,7 @@
   });
 
   /* ---------- 2. NAVEGAÇÃO ENTRE ABAS PRINCIPAIS ---------- */
-  var navButtons = document.querySelectorAll('.nav-btn:not(.tutorial-trigger)');
+  var navButtons = document.querySelectorAll('.nav-btn:not(.tutorial-trigger):not(.theme-toggle)');
   var views = document.querySelectorAll('.view');
 
   navButtons.forEach(function (btn) {

@@ -1,4 +1,35 @@
 :root {
+  --bg: #eef3f8;
+  --bg-glow: radial-gradient(circle at 50% -20%, #ffffff 0%, #eef3f8 68%);
+  --surface: #ffffff;
+  --surface-raised: #f3f7fb;
+  --border: #d7e0eb;
+  --cyan: #0077b6;
+  --cyan-dim: rgba(0, 119, 182, 0.12);
+  --safe: #00e676;
+  --safe-dim: rgba(0, 230, 118, 0.18);
+  --danger: #ff3d00;
+  --danger-dim: rgba(255, 61, 0, 0.18);
+  --amber: #d97706;
+  --amber-dim: rgba(217, 119, 6, 0.16);
+  --purple: #a855f7;
+  --purple-dim: rgba(168, 85, 247, 0.18);
+  --text: #172033;
+  --text-muted: #5f6f85;
+  --shadow: rgba(15, 23, 42, 0.12);
+  --overlay-bg: rgba(15, 23, 42, 0.18);
+  --map-bg: radial-gradient(circle at 40% 30%, #f8fbff 0%, #e8eef6 80%);
+  --map-tile-filter: saturate(0.92) brightness(1.02) contrast(0.98);
+  --map-label-bg: rgba(255, 255, 255, 0.86);
+  --overlay-card-bg: rgba(255, 255, 255, 0.94);
+  --primary-text: #041017;
+  --radius-lg: 20px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
   --bg: #090d16;
   --bg-glow: radial-gradient(circle at 50% -20%, #1e2942 0%, #090d16 65%);
   --surface: #111827;
@@ -16,12 +47,44 @@
   --purple-dim: rgba(168, 85, 247, 0.18);
   --text: #f1f5f9;
   --text-muted: #94a3b8;
-  --radius-lg: 20px;
-  --radius-md: 12px;
-  --radius-sm: 8px;
+  --shadow: rgba(0, 0, 0, 0.5);
+  --overlay-bg: rgba(9, 13, 22, 0.88);
+  --map-bg: radial-gradient(circle at 40% 30%, #151d2a 0%, #0c111c 80%);
+  --map-tile-filter: saturate(0.75) brightness(0.75) contrast(1.05) hue-rotate(180deg) invert(1);
+  --map-label-bg: rgba(9, 13, 22, 0.7);
+  --overlay-card-bg: rgba(15, 23, 42, 0.93);
+  --primary-text: #041017;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
+
+html.theme-ready body,
+html.theme-ready .topbar,
+html.theme-ready .panel,
+html.theme-ready .urbanisa-hero,
+html.theme-ready .tutorial-card,
+html.theme-ready .field,
+html.theme-ready .stat-card,
+html.theme-ready .tool-btn,
+html.theme-ready .chip,
+html.theme-ready .btn,
+html.theme-ready .nav-btn,
+html.theme-ready .status,
+html.theme-ready .map-canvas,
+html.theme-ready #leaflet-map,
+html.theme-ready .log,
+html.theme-ready .overlay-card,
+html.theme-ready .map-tag,
+html.theme-ready .landmark-badge {
+  transition:
+    background 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    filter 180ms ease;
+}
 
 body {
   margin: 0;
@@ -52,7 +115,7 @@ h1, h2, h3, .display {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(9, 13, 22, 0.88);
+  background: var(--overlay-bg);
   backdrop-filter: blur(12px);
   display: flex;
   align-items: center;
@@ -62,14 +125,14 @@ h1, h2, h3, .display {
 }
 
 .urbanisa-hero {
-  background: linear-gradient(145deg, rgba(17, 24, 39, 0.95), rgba(30, 41, 59, 0.9));
+  background: linear-gradient(145deg, var(--surface), var(--surface-raised));
   border: 1px solid rgba(0, 242, 254, 0.4);
   border-radius: 28px;
   max-width: 620px;
   width: 100%;
   padding: 40px 36px;
   text-align: center;
-  box-shadow: 0 0 50px rgba(0, 242, 254, 0.25), 0 20px 50px rgba(0,0,0,0.6);
+  box-shadow: 0 0 50px var(--cyan-dim), 0 20px 50px var(--shadow);
   position: relative;
   overflow: hidden;
 }
@@ -195,7 +258,7 @@ h1, h2, h3, .display {
   position: fixed;
   inset: 0;
   z-index: 999;
-  background: rgba(9, 13, 22, 0.85);
+  background: var(--overlay-bg);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -210,7 +273,7 @@ h1, h2, h3, .display {
   max-width: 580px;
   width: 100%;
   padding: 28px;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+  box-shadow: 0 20px 40px var(--shadow);
   position: relative;
 }
 
@@ -349,7 +412,7 @@ h1, h2, h3, .display {
   position: sticky;
   top: 12px;
   z-index: 100;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  box-shadow: 0 10px 30px var(--shadow);
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
@@ -427,6 +490,27 @@ button.nav-btn.tutorial-trigger:hover {
   background-color: var(--amber-dim);
 }
 
+button.nav-btn.theme-toggle {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  padding-inline: 12px;
+}
+
+button.nav-btn.theme-toggle:hover {
+  background-color: var(--cyan-dim);
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+
+.theme-toggle-icon {
+  line-height: 1;
+}
+
+.theme-toggle-text {
+  white-space: nowrap;
+}
+
 .status {
   display: flex;
   align-items: center;
@@ -494,7 +578,7 @@ button.nav-btn.tutorial-trigger:hover {
 
 .btn.primary {
   background: linear-gradient(145deg, var(--safe), #00b0ff);
-  color: #041017;
+  color: var(--primary-text);
   border: none;
   font-family: 'Anta', sans-serif;
   box-shadow: 0 4px 14px var(--safe-dim);
@@ -634,7 +718,7 @@ button.nav-btn.tutorial-trigger:hover {
   min-height: 450px;
   margin: 14px;
   border-radius: var(--radius-lg);
-  background: radial-gradient(circle at 40% 30%, #151d2a 0%, #0c111c 80%);
+  background: var(--map-bg);
   border: 1px solid var(--border);
   overflow: hidden;
 }
@@ -646,12 +730,12 @@ button.nav-btn.tutorial-trigger:hover {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
   z-index: 0;
-  background: #0c111c; /* evita "flash" branco enquanto os tiles carregam */
+  background: var(--bg); /* evita "flash" enquanto os tiles carregam */
 }
 /* Deixa os tiles do OSM com a estética escura do painel (efeito HUD) */
-#leaflet-map .leaflet-tile-pane { filter: saturate(0.75) brightness(0.75) contrast(1.05) hue-rotate(180deg) invert(1); }
+#leaflet-map .leaflet-tile-pane { filter: var(--map-tile-filter); }
 #leaflet-map .leaflet-control-attribution {
-  background: rgba(9, 13, 22, 0.75); color: var(--text-muted);
+  background: var(--map-label-bg); color: var(--text-muted);
   font-size: 9.5px;
 }
 #leaflet-map .leaflet-control-attribution a { color: var(--cyan); }
@@ -741,7 +825,7 @@ button.nav-btn.tutorial-trigger:hover {
   font-size: 10.5px;
   color: var(--cyan);
   font-family: 'JetBrains Mono', monospace;
-  background: rgba(9, 13, 22, 0.7);
+  background: var(--map-label-bg);
   padding: 2px 6px;
   border-radius: 4px;
   border: 1px solid rgba(0, 242, 254, 0.2);
@@ -752,7 +836,7 @@ button.nav-btn.tutorial-trigger:hover {
   font-size: 10px;
   font-weight: 600;
   color: var(--text);
-  background: rgba(30, 41, 59, 0.85);
+  background: var(--map-label-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 3px 8px;
@@ -791,13 +875,13 @@ button.nav-btn.tutorial-trigger:hover {
   bottom: 12px;
   left: 12px;
   right: 12px;
-  background: rgba(15, 23, 42, 0.93);
+  background: var(--overlay-card-bg);
   backdrop-filter: blur(10px);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 12px 16px;
   pointer-events: auto;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+  box-shadow: 0 10px 25px var(--shadow);
   animation: fadeIn 0.25s ease-out;
 }
 
@@ -807,7 +891,7 @@ button.nav-btn.tutorial-trigger:hover {
 }
 
 .cost-tag {
-  background: rgba(9, 13, 22, 0.95);
+  background: var(--overlay-card-bg);
   border: 1px solid var(--cyan);
   border-radius: 6px;
   padding: 3px 7px;
