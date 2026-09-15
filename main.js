@@ -226,12 +226,13 @@
 
     if (graphPoints.length === 0) return;
 
-    // Mostra apenas a região realmente usada pela malha e uma margem discreta
-    // para que os nós das extremidades não sejam cortados.
-    var graphBounds = L.latLngBounds(graphPoints).pad(0.06);
+    // Mostra somente a região realmente usada pela malha. Uma margem em pixels
+    // preserva os ícones da borda sem revelar ruas fora do cenário.
+    var graphBounds = L.latLngBounds(graphPoints);
     leafletMap.setMaxBounds(graphBounds);
+    leafletMap.invalidateSize();
     leafletMap.fitBounds(graphBounds, {
-      padding: [0, 0],
+      padding: [14, 14],
       maxZoom: 19,
       animate: false
     });
@@ -1627,6 +1628,9 @@
     }
 
     fitMapToGraphNodes();
+    // O Leaflet só conhece o tamanho final do painel depois do primeiro layout.
+    // Repetir o enquadramento aqui evita manter o zoom inicial mais amplo.
+    setTimeout(fitMapToGraphNodes, 0);
 
     applySpeed(1.5);
     randomizeExits();
