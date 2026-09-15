@@ -571,7 +571,11 @@
       if (n.type !== 'blocked') n.type = 'normal';
     });
 
-    var validCandidates = nodes.filter(function (n) { return n.type === 'normal'; });
+    // Uma saída precisa poder ser alcançada por alguma aresta. Sem essa
+    // restrição, uma rua isolada pode virar saída e deixar agentes sem rota.
+    var validCandidates = nodes.filter(function (n) {
+      return n.type === 'normal' && hasIncomingConnection(n.id);
+    });
     if (validCandidates.length === 0) return;
 
     for (var i = validCandidates.length - 1; i > 0; i--) {
@@ -589,14 +593,57 @@
     addLog('<span class="hl">Saídas de emergência sorteadas aleatoriamente nas ruas</span>');
   }
 
-  function createAgent(id, startNodeId) {
+  function hasIncomingConnection(nodeId) {
+    return edges.some(function (edge) {
+      if (edge.blocked) return false;
+      var from = getNode(edge.from);
+      var to = getNode(edge.to);
+      if (!from || !to || from.type === 'blocked' || to.type === 'blocked') return false;
+      return edge.to === nodeId || (!edge.directed && edge.from === nodeId);
+    });
+  }
+
+  function getNodeIdsThatCanReachAnExit() {
+    // Percorre as arestas no sentido inverso, partindo das saídas. Assim, um
+    // nó só é elegível para receber um agente se houver uma rota válida dele
+    // até uma saída, respeitando ruas de mão única e bloqueios.
+    var reverseEdges = new Map();
+    nodes.forEach(function (node) { reverseEdges.set(node.id, []); });
+
+    edges.forEach(function (edge) {
+      if (edge.blocked) return;
+      var from = getNode(edge.from);
+      var to = getNode(edge.to);
+      if (!from || !to || from.type === 'blocked' || to.type === 'blocked') return;
+      reverseEdges.get(to.id).push(from.id);
+      if (!edge.directed) reverseEdges.get(from.id).push(to.id);
+    });
+
+    var reachable = new Set();
+    var pending = nodes.filter(function (node) { return node.type === 'exit'; }).map(function (node) { return node.id; });
+    while (pending.length > 0) {
+      var nodeId = pending.pop();
+      if (reachable.has(nodeId)) continue;
+      reachable.add(nodeId);
+      (reverseEdges.get(nodeId) || []).forEach(function (previousId) {
+        if (!reachable.has(previousId)) pending.push(previousId);
+      });
+    }
+    return reachable;
+  }
+
+  function createAgent(id, startNodeId, reachableNodeIds) {
     // Um agente só começa em um nó da malha viária. Antes ele nascia no meio
     // de uma aresta, mas sua rota começava em outro nó; no primeiro frame isso
     // criava um segmento em linha reta que podia atravessar prédios.
+    reachableNodeIds = reachableNodeIds || getNodeIdsThatCanReachAnExit();
     var normalNodes = nodes.filter(function (n) {
-      return n.type === 'normal' && getNeighbors(n.id).length > 0;
+      return n.type === 'normal' && reachableNodeIds.has(n.id) && getNeighbors(n.id).length > 0;
     });
-    var randNode = getNode(startNodeId) || normalNodes[Math.floor(Math.random() * normalNodes.length)] || nodes[0];
+    var requestedNode = getNode(startNodeId);
+    var randNode = requestedNode && requestedNode.type === 'normal' && reachableNodeIds.has(requestedNode.id)
+      ? requestedNode
+      : normalNodes[Math.floor(Math.random() * normalNodes.length)] || nodes.find(function (n) { return n.type === 'exit'; }) || nodes[0];
     var startId = randNode ? randNode.id : 'N1';
     var res = findPath(startId, true);
     var pos = safeNodeLatLng(randNode);
@@ -617,8 +664,11 @@
 
   function initAgents() {
     agents = [];
+    // Todas as pessoas criadas nesta rodada usam a mesma malha e as mesmas
+    // saídas; calcular a alcançabilidade uma única vez evita trabalho repetido.
+    var reachableNodeIds = getNodeIdsThatCanReachAnExit();
     for (var i = 1; i <= totalAgentes; i++) {
-      agents.push(createAgent(i));
+      agents.push(createAgent(i, null, reachableNodeIds));
     }
   }
 
