@@ -701,9 +701,20 @@
     return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   }
 
+  function isWithinScenarioBounds(node) {
+    return node && Number.isFinite(node.lat) && Number.isFinite(node.lng) &&
+      node.lat >= GEO_BOUNDS.south && node.lat <= GEO_BOUNDS.north &&
+      node.lng >= GEO_BOUNDS.west && node.lng <= GEO_BOUNDS.east;
+  }
+
   function normalizeApiGraph(graph) {
+    // O servidor pode estar numa versão antiga ou o Overpass pode devolver a
+    // geometria inteira de uma via que toca a borda. Reaplique o limite no
+    // cliente para que nenhum desses casos faça nós externos chegarem à tela.
+    var allowedNodes = (graph.nodes || []).filter(isWithinScenarioBounds);
+    var allowedIds = new Set(allowedNodes.map(function (n) { return n.id; }));
     return {
-      nodes: graph.nodes.map(function (n) {
+      nodes: allowedNodes.map(function (n) {
         var copy = Object.assign({}, n);
         var xy = latLngToXY(copy.lat, copy.lng);
         copy.x = xy.x;
@@ -711,7 +722,9 @@
         copy.name = copy.name || 'Trecho de via';
         return copy;
       }),
-      edges: graph.edges
+      edges: (graph.edges || []).filter(function (edge) {
+        return allowedIds.has(edge.from) && allowedIds.has(edge.to);
+      })
     };
   }
 
