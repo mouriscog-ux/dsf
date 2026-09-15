@@ -153,7 +153,9 @@
   // Aqui definimos a correspondência entre esse espaço abstrato e a área geográfica
   // real do Bairro da Liberdade (SP), para desenhar tudo em cima do mapa de verdade.
   var MODEL_BOUNDS = { minX: 40, maxX: 440, minY: 40, maxY: 360 };
-  var GEO_BOUNDS = { south: -23.5650, north: -23.5530, west: -46.6420, east: -46.6280 };
+  // Limite do cenário: envolve todos os nós iniciais, com cerca de 25 m de margem
+  // para que os marcadores das extremidades não sejam cortados pelo mapa.
+  var GEO_BOUNDS = { south: -23.55895, north: -23.55495, west: -46.63645, east: -46.63225 };
 
   function getNodeByXY(x, y) {
     if (!nodes) return null;
@@ -195,16 +197,16 @@
     return { x: x, y: y };
   }
 
-  // "Efeito parede": o usuário pode navegar dentro da Liberdade, mas não sai da área
+  // "Efeito parede": o usuário navega apenas dentro da área coberta pelos nós.
   var WALL_BOUNDS = L.latLngBounds(
-    L.latLng(GEO_BOUNDS.south - 0.0025, GEO_BOUNDS.west - 0.0025),
-    L.latLng(GEO_BOUNDS.north + 0.0025, GEO_BOUNDS.east + 0.0025)
+    L.latLng(GEO_BOUNDS.south, GEO_BOUNDS.west),
+    L.latLng(GEO_BOUNDS.north, GEO_BOUNDS.east)
   );
 
   var leafletMap = L.map('leaflet-map', {
     center: [(GEO_BOUNDS.north + GEO_BOUNDS.south) / 2, (GEO_BOUNDS.west + GEO_BOUNDS.east) / 2],
-    zoom: 16,
-    minZoom: 15,
+    zoom: 18,
+    minZoom: 17,
     maxZoom: 19,
     maxBounds: WALL_BOUNDS,
     maxBoundsViscosity: 1.0
@@ -217,7 +219,11 @@
 
   // Camadas redesenhadas a cada frame da simulação
   var streetsLayer  = L.layerGroup().addTo(leafletMap); // arestas do grafo (ruas)
-  var nodesLayer     = L.layerGroup().addTo(leafletMap); // cruzamentos / saídas / bloqueios
+  var nodesLayer     = L.layerGroup().addTo(leafletMap); // cruzamentos / bloqueios
+  // Saídas usam uma camada própria para não sumirem junto com os nós.
+  var exitsLayer     = L.layerGroup().addTo(leafletMap);
+  // Bloqueios também precisam continuar visíveis quando os nós são ocultados.
+  var hazardsLayer   = L.layerGroup().addTo(leafletMap);
   var routesLayer    = L.layerGroup().addTo(leafletMap); // rotas calculadas pelo A*
   var agentsLayer    = L.layerGroup().addTo(leafletMap); // pessoas em evacuação
   var costTagsLayer  = L.layerGroup().addTo(leafletMap); // rótulos f(n)/g(n)/h(n)
@@ -290,10 +296,14 @@
   function getNeighbors(nodeId) {
     var list = [];
     edges.forEach(function (e) {
+      if (e.blocked) return;
       if (e.from === nodeId) {
         var target = getNode(e.to);
         if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
-      } else if (e.to === nodeId) {
+      // As arestas vindas do OSM já carregam os dois sentidos quando a rua
+      // permite tráfego nos dois sentidos. Não crie aqui o sentido inverso de
+      // uma via de mão única.
+      } else if (e.to === nodeId && !e.directed) {
         var target = getNode(e.from);
         if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
       }
@@ -490,7 +500,18 @@
 
   function snapToNearestStreet(lat, lng) {
     var minDistance = Infinity;
-    var bestPoint = { lat: lat, lng: lng, x: 0, y: 0, fromNodeId: 'N1', toNodeId: 'N2', progress: 0 };
+    var clickedXY = latLngToXY(lat, lng);
+    // Mantém o marcador no ponto clicado até encontrar uma rua elegível.
+    // O valor antigo (0, 0) podia posicionar alguns bloqueios fora do mapa.
+    var bestPoint = {
+      lat: lat,
+      lng: lng,
+      x: clickedXY.x,
+      y: clickedXY.y,
+      fromNodeId: null,
+      toNodeId: null,
+      progress: 0
+    };
 
     edges.forEach(function (e) {
       var n1 = getNode(e.from);
@@ -553,54 +574,27 @@
   }
 
   function createAgent(id, startNodeId) {
-    var validEdges = edges.filter(function (e) {
-      var n1 = getNode(e.from);
-      var n2 = getNode(e.to);
-      return n1 && n2 && n1.type !== 'blocked' && n2.type !== 'blocked';
+    // Um agente só começa em um nó da malha viária. Antes ele nascia no meio
+    // de uma aresta, mas sua rota começava em outro nó; no primeiro frame isso
+    // criava um segmento em linha reta que podia atravessar prédios.
+    var normalNodes = nodes.filter(function (n) {
+      return n.type === 'normal' && getNeighbors(n.id).length > 0;
     });
-
-    if (validEdges.length === 0 || startNodeId) {
-      var normalNodes = nodes.filter(function (n) { return n.type === 'normal'; });
-      var randNode = getNode(startNodeId) || normalNodes[Math.floor(Math.random() * normalNodes.length)] || nodes[0];
-      var startId = randNode ? randNode.id : 'N1';
-      var res0 = findPath(startId, true);
-      return {
-        id: id,
-        currentNodeId: startId,
-        path: res0 ? res0.path : [startId],
-        pathIndex: 0,
-        segmentProgress: 0,
-        x: randNode.x,
-        y: randNode.y,
-        evacuated: false
-      };
-    }
-
-    var randEdge = validEdges[Math.floor(Math.random() * validEdges.length)];
-    var nFrom = getNode(randEdge.from);
-    var nTo = getNode(randEdge.to);
-    var t = Math.random();
-    var fromLatLng = safeNodeLatLng(nFrom);
-    var toLatLng = safeNodeLatLng(nTo);
-
-    var posLat = fromLatLng.lat + (toLatLng.lat - fromLatLng.lat) * t;
-    var posLng = fromLatLng.lng + (toLatLng.lng - fromLatLng.lng) * t;
-    var posX = nFrom.x + (nTo.x - nFrom.x) * t;
-    var posY = nFrom.y + (nTo.y - nFrom.y) * t;
-
-    var startId = t >= 0.5 ? randEdge.to : randEdge.from;
+    var randNode = getNode(startNodeId) || normalNodes[Math.floor(Math.random() * normalNodes.length)] || nodes[0];
+    var startId = randNode ? randNode.id : 'N1';
     var res = findPath(startId, true);
+    var pos = safeNodeLatLng(randNode);
 
     return {
       id: id,
       currentNodeId: startId,
       path: res ? res.path : [startId],
       pathIndex: 0,
-      segmentProgress: t,
-      lat: posLat,
-      lng: posLng,
-      x: posX,
-      y: posY,
+      segmentProgress: 0,
+      lat: pos.lat,
+      lng: pos.lng,
+      x: randNode ? randNode.x : 0,
+      y: randNode ? randNode.y : 0,
       evacuated: false
     };
   }
@@ -613,16 +607,14 @@
   }
 
   function getDynamicGraphPayload() {
-    var baseNodeIds = new Set(INITIAL_NODES.map(function (n) { return n.id; }));
-    var baseEdgeKeys = new Set(INITIAL_EDGES.map(function (e) { return e.from + '-' + e.to; }));
-
-    var dynamicNodes = nodes.filter(function (n) { return !baseNodeIds.has(n.id) || n.type === 'blocked'; });
-    var dynamicEdges = edges.filter(function (e) { return !baseEdgeKeys.has(e.from + '-' + e.to); });
     var blockedIds = nodes.filter(function (n) { return n.type === 'blocked'; }).map(function (n) { return n.id; });
 
+    // O backend não mantém uma cópia do grafo. Portanto, depois de a API OSM
+    // substituir INITIAL_* pela malha real, enviar apenas o delta resulta em
+    // um grafo vazio no /api/pathfind-batch. Envie sempre o grafo atual inteiro.
     return {
-      dynamicNodes: dynamicNodes,
-      dynamicEdges: dynamicEdges,
+      dynamicNodes: nodes,
+      dynamicEdges: edges,
       blockedIds: blockedIds
     };
   }
@@ -642,6 +634,11 @@
         totalExploredSum += res.nodesExplored;
         totalCostSum += res.cost;
         validCount++;
+      } else {
+        // Nunca mantenha uma rota anterior se ela passou a incluir um bloqueio.
+        ag.path = [ag.currentNodeId];
+        ag.pathIndex = 0;
+        ag.segmentProgress = 0;
       }
     });
 
@@ -658,11 +655,137 @@
     recalculateAllAgentPaths();
   }
 
+  function blockStreetAtSnap(snap) {
+    if (!snap || !snap.fromNodeId || !snap.toNodeId) return 0;
+    var blockedSegments = 0;
+    edges.forEach(function (edge) {
+      var isSameStreetSegment =
+        (edge.from === snap.fromNodeId && edge.to === snap.toNodeId) ||
+        (edge.from === snap.toNodeId && edge.to === snap.fromNodeId);
+      if (isSameStreetSegment) {
+        edge.blocked = true;
+        blockedSegments++;
+      }
+    });
+    return blockedSegments;
+  }
+
   function getApiUrl(endpoint) {
     if (window.location.protocol === 'file:' || (window.location.port && window.location.port !== '8080')) {
       return 'http://localhost:8080' + endpoint;
     }
     return endpoint;
+  }
+
+  function isUsingLocalServer() {
+    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  }
+
+  function normalizeApiGraph(graph) {
+    return {
+      nodes: graph.nodes.map(function (n) {
+        var copy = Object.assign({}, n);
+        var xy = latLngToXY(copy.lat, copy.lng);
+        copy.x = xy.x;
+        copy.y = xy.y;
+        copy.name = copy.name || 'Trecho de via';
+        return copy;
+      }),
+      edges: graph.edges
+    };
+  }
+
+  // GitHub Pages só hospeda os arquivos estáticos; portanto /api/graph não
+  // existe na versão publicada. Esta rota de contingência consulta o OSM no
+  // navegador e tenta mais de um espelho, pois a Overpass pode responder 504.
+  async function fetchGraphFromOverpass() {
+    var query = '[out:json];way["highway"](' +
+      GEO_BOUNDS.south + ',' + GEO_BOUNDS.west + ',' + GEO_BOUNDS.north + ',' + GEO_BOUNDS.east +
+      ');out body;>;out skel qt;';
+    var endpoints = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+      'https://overpass.private.coffee/api/interpreter'
+    ];
+    var data = null;
+    var errors = [];
+
+    for (var endpointIndex = 0; endpointIndex < endpoints.length; endpointIndex++) {
+      var controller = new AbortController();
+      var timeoutId = setTimeout(function () { controller.abort(); }, 10000);
+      try {
+        var response = await fetch(endpoints[endpointIndex], {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: query,
+          signal: controller.signal
+        });
+        if (!response.ok) throw new Error('respondeu ' + response.status);
+        data = await response.json();
+        break;
+      } catch (error) {
+        errors.push(endpoints[endpointIndex] + ': ' + error.message);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    if (!data) throw new Error('Serviços Overpass indisponíveis (' + errors.join('; ') + ')');
+    var osmNodes = new Map();
+    (data.elements || []).forEach(function (el) {
+      if (el.type === 'node') osmNodes.set(el.id, { id: el.id, lat: el.lat, lng: el.lon });
+    });
+
+    var graphNodes = new Map();
+    var graphEdges = [];
+    var edgeKeys = new Set();
+
+    function nodeFor(osmId, roadName) {
+      var osm = osmNodes.get(osmId);
+      if (!osm) return null;
+      var id = 'node_' + osmId;
+      if (!graphNodes.has(id)) {
+        graphNodes.set(id, { id: id, osmId: osmId, lat: osm.lat, lng: osm.lng, name: roadName || 'Trecho de via', type: 'normal' });
+      }
+      return graphNodes.get(id);
+    }
+
+    function addEdge(from, to, roadName, wayId) {
+      if (!from || !to || from.id === to.id) return;
+      var key = from.id + '->' + to.id;
+      if (edgeKeys.has(key)) return;
+      edgeKeys.add(key);
+      graphEdges.push({
+        from: from.id,
+        to: to.id,
+        weight: distance(from, to),
+        directed: true,
+        roadId: 'road_' + wayId,
+        roadName: roadName,
+        name: roadName
+      });
+    }
+
+    (data.elements || []).forEach(function (way) {
+      if (way.type !== 'way' || !way.tags || !way.tags.highway || !way.nodes || way.nodes.length < 2) return;
+      var roadName = way.tags.name || 'Via sem nome';
+      var oneWay = way.tags.oneway === 'yes' || way.tags.oneway === '1' || way.tags.oneway === '-1';
+      var reverse = way.tags.oneway === '-1';
+      for (var i = 0; i < way.nodes.length - 1; i++) {
+        var a = nodeFor(way.nodes[i], roadName);
+        var b = nodeFor(way.nodes[i + 1], roadName);
+        if (!oneWay) {
+          addEdge(a, b, roadName, way.id);
+          addEdge(b, a, roadName, way.id);
+        } else if (reverse) {
+          addEdge(b, a, roadName, way.id);
+        } else {
+          addEdge(a, b, roadName, way.id);
+        }
+      }
+    });
+
+    return { nodes: Array.from(graphNodes.values()), edges: graphEdges };
   }
 
   async function recalculateAllAgentPathsAsync() {
@@ -704,6 +827,11 @@
               totalExploredSum += res.nodesExplored;
               totalCostSum += res.cost;
               validCount++;
+            } else {
+              // Sem caminho seguro, o agente para; não continua pela rota antiga.
+              ag.path = [ag.currentNodeId];
+              ag.pathIndex = 0;
+              ag.segmentProgress = 0;
             }
           });
 
@@ -725,42 +853,49 @@
   function renderGraph() {
     streetsLayer.clearLayers();
     nodesLayer.clearLayers();
+    exitsLayer.clearLayers();
+    hazardsLayer.clearLayers();
     routesLayer.clearLayers();
-    agentsLayer.clearLayers();
+    // Mantém a camada e o registro dos marcadores sincronizados antes de redesenhar.
+    // Limpar somente a camada faria o Map ainda apontar para ícones já removidos.
+    clearAgentMarkers();
 
     // Desenhos traçados de ruas e rotas sobre o mapa foram removidos
     // para exibir o mapa limpo com marcadores e agentes.
 
-    // Pré-calcula os resultados de busca usados para colorir os nós (evita recalcular por nó)
-    var sampleResNos = activeTab === 'tab-nos' ? findPath('N1', true) : null;
-    var astarResComp = activeTab === 'tab-comparar' ? findPath('N1', true) : null;
-    var dijkResComp  = activeTab === 'tab-comparar' ? findPath('N1', false) : null;
+    // Os nós continuam no grafo e nos cálculos, mas não são renderizados no mapa.
+    // Assim, o clique chega diretamente ao mapa para as ferramentas de cenário.
 
-    // Desenha os nós (cruzamentos / saídas / bloqueios) como marcadores reais
-    nodes.forEach(function (n) {
-      var classes = ['node'];
-      if (n.type !== 'normal') classes.push(n.type);
-      if (getFireDangerAtNode(n) > 0) classes.push('fire-active');
-
-      if (activeTab === 'tab-nos' && sampleResNos) {
-        if (sampleResNos.openSet.indexOf(n.id) !== -1) classes.push('open-set');
-        else if (sampleResNos.closedSet.indexOf(n.id) !== -1) classes.push('closed-set');
-      } else if (activeTab === 'tab-comparar') {
-        if (astarResComp && astarResComp.closedSet.indexOf(n.id) !== -1) classes.push('closed-set');
-        else if (dijkResComp && dijkResComp.closedSet.indexOf(n.id) !== -1) classes.push('dijkstra-visited');
-      }
-
-      var p = xyToLatLng(n.x, n.y);
-      var icon = L.divIcon({
+    // Mantém as saídas sempre acima dos nós e sem os estilos de open/closed set.
+    nodes.filter(function (n) { return n.type === 'exit'; }).forEach(function (exit) {
+      var exitPoint = safeNodeLatLng(exit);
+      var exitIcon = L.divIcon({
         className: '',
-        html: '<div class="' + classes.join(' ') + '" title="' + n.name.replace(/"/g, '&quot;') + '"></div>',
-        iconSize: [13, 13],
-        iconAnchor: [6.5, 6.5]
+        html: '<div class="node exit" title="' + exit.name.replace(/"/g, '&quot;') + '"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
       });
+      L.marker([exitPoint.lat, exitPoint.lng], {
+        icon: exitIcon,
+        interactive: false,
+        zIndexOffset: 1000
+      }).addTo(exitsLayer);
+    });
 
-      // interactive:false faz o clique "atravessar" o marcador e chegar até o mapa —
-      // é isso que permite clicar em cima de um nó para bloqueá-lo, por exemplo.
-      L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(nodesLayer);
+    // Exibe bloqueios como riscos independentes da camada de nós oculta.
+    nodes.filter(function (n) { return n.type === 'blocked'; }).forEach(function (blocked) {
+      var blockedPoint = safeNodeLatLng(blocked);
+      var blockedIcon = L.divIcon({
+        className: '',
+        html: '<div class="node blocked" title="' + blocked.name.replace(/"/g, '&quot;') + '"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      });
+      L.marker([blockedPoint.lat, blockedPoint.lng], {
+        icon: blockedIcon,
+        interactive: false,
+        zIndexOffset: 900
+      }).addTo(hazardsLayer);
     });
 
     // Desenha os agentes (pessoas evacuando) em tempo real nas ruas do Leaflet
@@ -1249,24 +1384,49 @@
         if (d < minDist) { minDist = d; closest = n; }
       });
 
-      if (closest && minDist < 35) {
+      if (closest && minDist < 12) {
         igniteFireAtNode(closest, 'manual');
       } else {
+        var snapBlock = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
         var newId = 'NB' + (nodes.length + 1);
-        var newFireNode = { id: newId, name: 'Foco de incêndio (' + x + ',' + y + ')', x: x, y: y, type: 'blocked' };
+        var newFireNode = {
+          id: newId,
+          name: 'Bloqueio em ' + safeNodeName(getNode(snapBlock.fromNodeId), 'via'),
+          lat: snapBlock.lat,
+          lng: snapBlock.lng,
+          x: snapBlock.x,
+          y: snapBlock.y,
+          type: 'blocked'
+        };
         nodes.push(newFireNode);
+        var blockedSegments = blockStreetAtSnap(snapBlock);
         igniteFireAtNode(newFireNode, 'manual');
+        if (blockedSegments > 0) {
+          addLog('<span class="warn">TRECHO DA VIA BLOQUEADO — agentes procurando desvio</span>');
+        } else {
+          addLog('<span class="warn">BLOQUEIO REGISTRADO FORA DE UMA VIA CONECTADA</span>');
+        }
       }
+      // Mostra o bloqueio imediatamente, antes de aguardar o recálculo de rotas.
+      renderGraph();
       await recalculateAllAgentPathsAsync();
 
     } else if (activeTool === 'saida') {
       var newExitId = 'NE' + (nodes.length + 1);
-      nodes.push({ id: newExitId, name: 'Nova Saída (' + Math.round(x) + ',' + Math.round(y) + ')', x: x, y: y, type: 'exit' });
+      nodes.push({
+        id: newExitId,
+        name: 'Nova Saída (' + Math.round(x) + ',' + Math.round(y) + ')',
+        lat: evt.latlng.lat,
+        lng: evt.latlng.lng,
+        x: x,
+        y: y,
+        type: 'exit'
+      });
 
       var nearest = null;
       var minD = Infinity;
       nodes.forEach(function (n) {
-        if (n.id !== newExitId) {
+        if (n.id !== newExitId && n.type !== 'blocked') {
           var d = Math.hypot(n.x - x, n.y - y);
           if (d < minD) { minD = d; nearest = n; }
         }
@@ -1275,6 +1435,8 @@
         edges.push({ from: newExitId, to: nearest.id, weight: Math.round(minD), name: 'Acesso Saída' });
       }
       addLog('<span class="hl">Nova saída segura cadastrada</span>');
+      // A saída é visível no instante do clique, mesmo enquanto a rota é recalculada.
+      renderGraph();
       await recalculateAllAgentPathsAsync();
 
     } else if (activeTool === 'pessoa') {
@@ -1284,12 +1446,10 @@
       }
       totalAgentes += 1;
       var snap = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
-      var newAgent = createAgent(totalAgentes, snap.fromNodeId);
-      newAgent.lat = snap.lat;
-      newAgent.lng = snap.lng;
-      newAgent.x = snap.x;
-      newAgent.y = snap.y;
-      newAgent.segmentProgress = snap.progress;
+      // O ponto clicado é associado ao extremo mais próximo da rua. Isso
+      // preserva a invariável de que todo movimento começa em uma aresta real.
+      var startId = snap.progress <= 0.5 ? snap.fromNodeId : snap.toNodeId;
+      var newAgent = createAgent(totalAgentes, startId);
       agents.push(newAgent);
 
       fieldAgentes.textContent = totalAgentes;
@@ -1394,6 +1554,7 @@
     window.addEventListener('resize', function () { leafletMap.invalidateSize(); });
     setTimeout(function () { leafletMap.invalidateSize(); }, 100);
 
+    var apiGraph = null;
     try {
       var response = await fetch(
         getApiUrl(
@@ -1407,15 +1568,35 @@
       if (response.ok) {
         var data = await response.json();
         if (data && data.nodes && data.edges) {
-          INITIAL_NODES = data.nodes;
-          INITIAL_EDGES = data.edges;
-          nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
-          edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
-          addLog('Grafo do bairro carregado via API (/api/graph)');
+          apiGraph = data;
         }
       }
     } catch (e) {
-      console.warn('Usando grafo estático inicial (fallback local)', e);
+      console.warn('API local indisponível; tentando Overpass diretamente', e);
+    }
+
+    // Ao rodar com o servidor local, uma resposta inválida significa que a
+    // Overpass falhou no servidor. Não repita as mesmas chamadas no navegador:
+    // use a malha local e mantenha a simulação disponível imediatamente.
+    if (!apiGraph && !isUsingLocalServer()) {
+      try {
+        apiGraph = await fetchGraphFromOverpass();
+        addLog('Grafo do bairro carregado diretamente do OpenStreetMap');
+      } catch (e) {
+        console.error('Não foi possível carregar a malha viária da API', e);
+        addLog('<span class="warn">API de ruas indisponível — usando mapa de contingência</span>');
+      }
+    } else if (!apiGraph) {
+      addLog('<span class="warn">OSM indisponível nesta rede — usando malha local do cenário</span>');
+    }
+
+    if (apiGraph && apiGraph.nodes.length > 0 && apiGraph.edges.length > 0) {
+      var normalizedGraph = normalizeApiGraph(apiGraph);
+      INITIAL_NODES = normalizedGraph.nodes;
+      INITIAL_EDGES = normalizedGraph.edges;
+      nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
+      edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
+      addLog('Malha viária da API aplicada: ' + nodes.length + ' nós e ' + edges.length + ' segmentos');
     }
 
     applySpeed(1.5);
