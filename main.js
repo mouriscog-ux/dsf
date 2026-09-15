@@ -152,10 +152,11 @@
   // O grafo do simulador vive num espaço "modelo" abstrato (x,y em metros aproximados).
   // Aqui definimos a correspondência entre esse espaço abstrato e a área geográfica
   // real do Bairro da Liberdade (SP), para desenhar tudo em cima do mapa de verdade.
-  var MODEL_BOUNDS = { minX: 40, maxX: 440, minY: 40, maxY: 360 };
-  // Limite do cenário: envolve todos os nós iniciais, com cerca de 25 m de margem
-  // para que os marcadores das extremidades não sejam cortados pelo mapa.
-  var GEO_BOUNDS = { south: -23.55895, north: -23.55495, west: -46.63645, east: -46.63225 };
+  // A malha do simulador ocupa aproximadamente 400 m no eixo leste-oeste e
+  // 300 m no eixo norte-sul. Esses limites evitam navegar por ruas que não
+  // fazem parte do cenário.
+  var MODEL_BOUNDS = { minX: 40, maxX: 440, minY: 40, maxY: 340 };
+  var GEO_BOUNDS = { south: -23.55830, north: -23.55560, west: -46.63631, east: -46.63239 };
 
   function getNodeByXY(x, y) {
     if (!nodes) return null;
@@ -206,7 +207,7 @@
   var leafletMap = L.map('leaflet-map', {
     center: [(GEO_BOUNDS.north + GEO_BOUNDS.south) / 2, (GEO_BOUNDS.west + GEO_BOUNDS.east) / 2],
     zoom: 18,
-    minZoom: 17,
+    minZoom: 18,
     maxZoom: 19,
     maxBounds: WALL_BOUNDS,
     maxBoundsViscosity: 1.0
