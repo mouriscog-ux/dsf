@@ -610,7 +610,12 @@ const server = http.createServer(async (req, res) => {
         res.end(`Erro no Servidor: ${err.code}`);
       }
     } else {
-      res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
+      res.writeHead(200, {
+        'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
+        // Durante o desenvolvimento, evite que o navegador execute uma versão
+        // antiga da interface depois de uma atualização do simulador.
+        'Cache-Control': 'no-store'
+      });
       res.end(content);
     }
   });
