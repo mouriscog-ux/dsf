@@ -245,39 +245,11 @@
   var costTagsLayer  = L.layerGroup().addTo(leafletMap); // rótulos f(n)/g(n)/h(n)
   var landmarksLayer = L.layerGroup().addTo(leafletMap); // marcos turísticos (estáticos)
 
-  /* ---------- 4. GRAFO REALISTA DO BAIRRO DA LIBERDADE ---------- */
-  var INITIAL_NODES = [
-    { id: 'N1', name: 'R. Galvão Bueno (Norte)', lat: -23.5552, lng: -46.6353, x: 60, y: 90, type: 'normal' },
-    { id: 'N2', name: 'Cruzamento Galvão x Estudantes', lat: -23.5566, lng: -46.6347, x: 210, y: 95, type: 'normal' },
-    { id: 'N3', name: 'Estação Metrô Liberdade 🚇', lat: -23.5553, lng: -46.6357, x: 340, y: 70, type: 'exit' },
-    { id: 'N4', name: 'Viaduto Cidade de Osaka 🌉', lat: -23.5559, lng: -46.6350, x: 140, y: 60, type: 'blocked' },
-    { id: 'N5', name: 'Rua dos Estudantes (Oeste)', lat: -23.5564, lng: -46.6356, x: 90, y: 260, type: 'normal' },
-    { id: 'N6', name: 'Cruzamento Galvão x Américo', lat: -23.5574, lng: -46.6344, x: 200, y: 200, type: 'normal' },
-    { id: 'N7', name: 'Praça da Liberdade 🏙️', lat: -23.5557, lng: -46.6360, x: 300, y: 180, type: 'exit' },
-    { id: 'N8', name: 'Rua da Glória (Sul)', lat: -23.5573, lng: -46.6343, x: 160, y: 230, type: 'normal' },
-    { id: 'N9', name: 'Rua Américo de Campos', lat: -23.5575, lng: -46.6335, x: 270, y: 270, type: 'normal' },
-    { id: 'N10', name: 'Avenida Liberdade 🚦', lat: -23.5574, lng: -46.6362, x: 420, y: 130, type: 'exit' },
-    { id: 'N11', name: 'Rua Conselheiro Furtado', lat: -23.5571, lng: -46.6325, x: 380, y: 230, type: 'normal' },
-    { id: 'N12', name: 'Rua São Joaquim', lat: -23.5587, lng: -46.6341, x: 110, y: 340, type: 'normal' }
-  ];
-
-  var INITIAL_EDGES = [
-    { from: 'N1', to: 'N4', weight: 80, name: 'R. Galvão Bueno' },
-    { from: 'N4', to: 'N2', weight: 75, name: 'R. Galvão Bueno' },
-    { from: 'N2', to: 'N3', weight: 130, name: 'Praça da Liberdade' },
-    { from: 'N1', to: 'N5', weight: 170, name: 'R. Tomás de Lima' },
-    { from: 'N5', to: 'N8', weight: 75, name: 'R. dos Estudantes' },
-    { from: 'N8', to: 'N6', weight: 50, name: 'R. dos Estudantes' },
-    { from: 'N6', to: 'N7', weight: 100, name: 'R. Américo de Campos' },
-    { from: 'N2', to: 'N6', weight: 105, name: 'R. Galvão Bueno' },
-    { from: 'N6', to: 'N9', weight: 90, name: 'R. Américo de Campos' },
-    { from: 'N9', to: 'N7', weight: 95, name: 'R. da Glória' },
-    { from: 'N3', to: 'N10', weight: 100, name: 'Av. Liberdade' },
-    { from: 'N7', to: 'N10', weight: 130, name: 'Av. Liberdade' },
-    { from: 'N7', to: 'N11', weight: 95, name: 'R. Cons. Furtado' },
-    { from: 'N5', to: 'N12', weight: 85, name: 'R. São Joaquim' },
-    { from: 'N8', to: 'N12', weight: 120, name: 'R. São Joaquim' }
-  ];
+  /* ---------- 4. GRAFO VIA API ---------- */
+  // A simulação não possui malha embarcada: estes dados só são preenchidos
+  // quando a API OSM retorna uma resposta válida.
+  var apiInitialNodes = [];
+  var apiInitialEdges = [];
 
   var LANDMARKS = [
     { text: '🏮 Portal Liberdade', x: 60, y: 90 },
@@ -286,8 +258,8 @@
     { text: '🌉 Viaduto Osaka', x: 140, y: 60 }
   ];
 
-  var nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
-  var edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
+  var nodes = [];
+  var edges = [];
   var activeFires = [];
   var lastFireComparison = null;
 
@@ -1408,8 +1380,8 @@
     stopTimer();
     evacuados = 0;
     elapsedSeconds = 0;
-    nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
-    edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
+    nodes = JSON.parse(JSON.stringify(apiInitialNodes));
+    edges = JSON.parse(JSON.stringify(apiInitialEdges));
     activeFires = [];
     lastFireComparison = null;
     totalAgentes = 50;
@@ -1670,25 +1642,32 @@
     }
 
     // Em algumas redes, o processo Node não tem saída para a internet, mas o
-    // navegador tem. Quando /api/graph falhar, tente o Overpass diretamente
-    // também no localhost; se ambos falharem, a malha local continua ativa.
+    // navegador tem. Quando /api/graph falhar, tente o Overpass diretamente.
     if (!apiGraph) {
       try {
         apiGraph = await fetchGraphFromOverpass();
         addLog('Grafo do bairro carregado diretamente do OpenStreetMap');
       } catch (e) {
         console.warn('OpenStreetMap indisponível; usando malha de contingência', e);
-        addLog('<span class="warn">API de ruas indisponível — usando mapa de contingência</span>');
+        addLog('<span class="warn">API de ruas indisponível — simulação não iniciada</span>');
       }
     }
 
     if (apiGraph && apiGraph.nodes.length > 0 && apiGraph.edges.length > 0) {
       var normalizedGraph = normalizeApiGraph(apiGraph);
-      INITIAL_NODES = normalizedGraph.nodes;
-      INITIAL_EDGES = normalizedGraph.edges;
-      nodes = JSON.parse(JSON.stringify(INITIAL_NODES));
-      edges = JSON.parse(JSON.stringify(INITIAL_EDGES));
+      apiInitialNodes = normalizedGraph.nodes;
+      apiInitialEdges = normalizedGraph.edges;
+      nodes = JSON.parse(JSON.stringify(apiInitialNodes));
+      edges = JSON.parse(JSON.stringify(apiInitialEdges));
       addLog('Malha viária da API aplicada: ' + nodes.length + ' nós e ' + edges.length + ' segmentos');
+    } else {
+      btnIniciar.disabled = true;
+      btnReiniciar.disabled = true;
+      btnIniciar.textContent = 'API indisponível';
+      fitMapToScenarioBounds();
+      setStatus(STATE.STOPPED);
+      renderGraph();
+      return;
     }
 
     fitMapToScenarioBounds();
