@@ -4,7 +4,7 @@
   "description": "SmartEvac — Protótipo de simulação de evacuação com A* e Dijkstra (Bairro da Liberdade)",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node --use-system-ca server.js"
   },
   "keywords": ["a-star", "dijkstra", "pathfinding", "simulation", "evacuation"],
   "author": "FECART",

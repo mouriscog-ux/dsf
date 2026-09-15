@@ -3,6 +3,10 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 8080;
+const OVERPASS_HEADERS = {
+  'Content-Type': 'text/plain',
+  'User-Agent': 'SmartEvac/1.0 (local evacuation simulation)'
+};
 
 // Helper: Euclidean distance heuristic h(n) using real GPS coordinates
 function heuristicToNode(nodeA, nodeB) {
@@ -192,7 +196,7 @@ async function fetchOSMData(south, west, north, east) {
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
+        headers: OVERPASS_HEADERS,
         body: query,
         signal: controller.signal
       });
@@ -211,6 +215,7 @@ async function fetchOSMData(south, west, north, east) {
     try {
       const response = await fetch(`${endpoint}?data=${encodeURIComponent(query)}`, {
         method: 'GET',
+        headers: { 'User-Agent': OVERPASS_HEADERS['User-Agent'] },
         signal: getController.signal
       });
       if (!response.ok) throw new Error(`respondeu ${response.status}`);
