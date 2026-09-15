@@ -264,10 +264,11 @@ function processOSMData(data) {
 
   }
 
-  const graph = createGraphFromRoads(
+  const rawGraph = createGraphFromRoads(
     roads,
     osmNodes
   );
+  const graph = simplifyGraphForSimulation(rawGraph);
 
   const formattedBuildings = buildings.map(function (building) {
 
@@ -404,6 +405,50 @@ function createGraphFromRoads(roads, osmNodes) {
     nodes,
     edges
   };
+}
+
+// OSM inclui um nó em cada curva da geometria das ruas. Para a simulação,
+// agrupamos nós próximos (células de ~16 m), mantendo as conexões entre ruas
+// e evitando milhares de nós equivalentes a cada recálculo de rota.
+function simplifyGraphForSimulation(graph, cellSizeMeters = 16) {
+  if (!graph || !Array.isArray(graph.nodes) || graph.nodes.length === 0) return graph;
+
+  const baseLat = graph.nodes[0].lat;
+  const baseLng = graph.nodes[0].lng;
+  const metersPerLng = 111320 * Math.cos(baseLat * Math.PI / 180);
+  const representatives = new Map();
+  const nodeToCell = new Map();
+
+  graph.nodes.forEach(node => {
+    const x = (node.lng - baseLng) * metersPerLng;
+    const y = (node.lat - baseLat) * 111320;
+    const cell = `${Math.floor(x / cellSizeMeters)}:${Math.floor(y / cellSizeMeters)}`;
+    nodeToCell.set(node.id, cell);
+    if (!representatives.has(cell)) {
+      representatives.set(cell, { ...node, id: `cell_${cell.replace(':', '_')}`, type: 'normal' });
+    }
+  });
+
+  const edgeMap = new Map();
+  graph.edges.forEach(edge => {
+    const fromCell = nodeToCell.get(edge.from);
+    const toCell = nodeToCell.get(edge.to);
+    if (!fromCell || !toCell || fromCell === toCell) return;
+
+    const from = representatives.get(fromCell);
+    const to = representatives.get(toCell);
+    const key = `${from.id}->${to.id}`;
+    const weight = Math.hypot(
+      (from.lat - to.lat) * 111320,
+      (from.lng - to.lng) * metersPerLng
+    );
+    const previous = edgeMap.get(key);
+    if (!previous || weight < previous.weight) {
+      edgeMap.set(key, { ...edge, from: from.id, to: to.id, weight, directed: true });
+    }
+  });
+
+  return { nodes: Array.from(representatives.values()), edges: Array.from(edgeMap.values()) };
 }
 
 const MIME_TYPES = {
