@@ -1,58 +1,65 @@
 export class SimMap {
-    constructor() {
-        // Initial Liberdade graph from server.js
-        this.initialNodes = [
-            { id: 'N1', name: 'Rua Galvão Bueno (Norte)', x: 60, y: 90, type: 'normal' },
-            { id: 'N2', name: 'Cruzamento Galvão x Estudantes', x: 210, y: 95, type: 'normal' },
-            { id: 'N3', name: 'Saída Metrô Liberdade', x: 340, y: 70, type: 'exit' },
-            { id: 'N4', name: 'Viaduto Cidade de Osaka', x: 140, y: 60, type: 'blocked' },
-            { id: 'N5', name: 'Rua dos Estudantes (Oeste)', x: 90, y: 260, type: 'normal' },
-            { id: 'N6', name: 'Cruzamento Estudantes x Américo', x: 200, y: 200, type: 'normal' },
-            { id: 'N7', name: 'Saída Praça da Liberdade', x: 300, y: 180, type: 'exit' },
-            { id: 'N8', name: 'Rua Glória (Sul)', x: 160, y: 230, type: 'normal' },
-            { id: 'N9', name: 'Rua Américo de Campos', x: 270, y: 270, type: 'normal' },
-            { id: 'N10', name: 'Saída Avenida Liberdade', x: 420, y: 130, type: 'exit' },
-            { id: 'N11', name: 'Rua Conselheiro Furtado', x: 380, y: 230, type: 'normal' },
-            { id: 'N12', name: 'Rua São Joaquim', x: 110, y: 340, type: 'normal' }
-        ];
+  constructor() {
+    this.initialNodes = [
+      { id: 'A', name: 'Entrada Norte', x: 80, y: 70, type: 'normal', lat: -23.5549, lng: -46.6388 },
+      { id: 'B', name: 'Cruzamento Central Norte', x: 240, y: 70, type: 'normal', lat: -23.5549, lng: -46.6359 },
+      { id: 'C', name: 'Rua da Escola', x: 400, y: 70, type: 'normal', lat: -23.5549, lng: -46.6330 },
+      { id: 'D', name: 'Bairro Oeste', x: 80, y: 220, type: 'normal', lat: -23.5571, lng: -46.6388 },
+      { id: 'E', name: 'Praça Central', x: 240, y: 220, type: 'normal', lat: -23.5571, lng: -46.6359 },
+      { id: 'F', name: 'Hospital', x: 400, y: 220, type: 'normal', lat: -23.5571, lng: -46.6330 },
+      { id: 'G', name: 'Terminal Sul', x: 80, y: 370, type: 'normal', lat: -23.5593, lng: -46.6388 },
+      { id: 'H', name: 'Cruzamento Sul', x: 240, y: 370, type: 'normal', lat: -23.5593, lng: -46.6359 },
+      { id: 'I', name: 'Saída Segura', x: 400, y: 370, type: 'exit', lat: -23.5593, lng: -46.6330 }
+    ];
 
-        this.initialEdges = [
-            { from: 'N1', to: 'N4', weight: 80, name: 'R. Galvão Bueno' },
-            { from: 'N4', to: 'N2', weight: 75, name: 'R. Galvão Bueno' },
-            { from: 'N2', to: 'N3', weight: 130, name: 'Praça da Liberdade' },
-            { from: 'N1', to: 'N5', weight: 170, name: 'R. Tomás de Lima' },
-            { from: 'N5', to: 'N8', weight: 75, name: 'R. dos Estudantes' },
-            { from: 'N8', to: 'N6', weight: 50, name: 'R. dos Estudantes' },
-            { from: 'N6', to: 'N7', weight: 100, name: 'R. Américo de Campos' },
-            { from: 'N2', to: 'N6', weight: 105, name: 'R. Galvão Bueno' },
-            { from: 'N6', to: 'N9', weight: 90, name: 'R. Américo de Campos' },
-            { from: 'N9', to: 'N7', weight: 95, name: 'R. da Glória' },
-            { from: 'N3', to: 'N10', weight: 100, name: 'Av. Liberdade' },
-            { from: 'N7', to: 'N10', weight: 130, name: 'Av. Liberdade' },
-            { from: 'N7', to: 'N11', weight: 95, name: 'R. Cons. Furtado' },
-            { from: 'N5', to: 'N12', weight: 85, name: 'R. São Joaquim' },
-            { from: 'N8', to: 'N12', weight: 120, name: 'R. São Joaquim' }
-        ];
+    this.initialEdges = [
+      { id: 'AB', from: 'A', to: 'B', weight: 160, name: 'Rua Norte', blocked: false, kind: 'street' },
+      { id: 'BC', from: 'B', to: 'C', weight: 160, name: 'Rua Norte Leste', blocked: false, kind: 'street' },
+      { id: 'AD', from: 'A', to: 'D', weight: 150, name: 'Av. Oeste', blocked: false, kind: 'street' },
+      { id: 'BE', from: 'B', to: 'E', weight: 150, name: 'Rua Central', blocked: false, kind: 'street' },
+      { id: 'CF', from: 'C', to: 'F', weight: 150, name: 'Av. Leste', blocked: false, kind: 'street' },
+      { id: 'DE', from: 'D', to: 'E', weight: 160, name: 'Rua do Comércio', blocked: false, kind: 'street' },
+      { id: 'EF', from: 'E', to: 'F', weight: 160, name: 'Rua do Hospital', blocked: false, kind: 'street' },
+      { id: 'DG', from: 'D', to: 'G', weight: 150, name: 'Av. Oeste Sul', blocked: false, kind: 'street' },
+      { id: 'EH', from: 'E', to: 'H', weight: 150, name: 'Rua Central Sul', blocked: false, kind: 'street' },
+      { id: 'FI', from: 'F', to: 'I', weight: 150, name: 'Corredor da Saída', blocked: false, kind: 'street' },
+      { id: 'GH', from: 'G', to: 'H', weight: 160, name: 'Rua Sul', blocked: false, kind: 'street' },
+      { id: 'HI', from: 'H', to: 'I', weight: 160, name: 'Rua Sul Leste', blocked: false, kind: 'street' },
+      { id: 'BF', from: 'B', to: 'F', weight: 235, name: 'Diagonal de Serviço', blocked: false, kind: 'street', geometry: [{ x: 240, y: 70 }, { x: 315, y: 145 }, { x: 400, y: 220 }] },
+      { id: 'DH', from: 'D', to: 'H', weight: 235, name: 'Rota Alternativa Sul', blocked: false, kind: 'street', geometry: [{ x: 80, y: 220 }, { x: 150, y: 310 }, { x: 240, y: 370 }] }
+    ];
 
-        this.nodes = [];
-        this.edges = [];
-        this.reset();
-    }
+    this.nodes = [];
+    this.edges = [];
+    this.reset();
+  }
 
-    reset() {
-        this.nodes = JSON.parse(JSON.stringify(this.initialNodes));
-        this.edges = JSON.parse(JSON.stringify(this.initialEdges));
-    }
+  reset() {
+    this.nodes = JSON.parse(JSON.stringify(this.initialNodes));
+    this.edges = JSON.parse(JSON.stringify(this.initialEdges));
+  }
 
-    getNodes() {
-        return this.nodes;
-    }
+  getNodes() { return this.nodes; }
+  getEdges() { return this.edges; }
+  getNode(id) { return this.nodes.find(n => n.id === id); }
+  getEdgeById(id) { return this.edges.find(e => e.id === id); }
 
-    getEdges() {
-        return this.edges;
-    }
+  getEdge(fromId, toId) {
+    return this.edges.find(e => (e.from === fromId && e.to === toId) || (e.from === toId && e.to === fromId));
+  }
 
-    getNode(id) {
-        return this.nodes.find(n => n.id === id);
-    }
+  setEdgeBlocked(edgeId, blocked, reason = 'block') {
+    const edge = this.getEdgeById(edgeId);
+    if (!edge) return null;
+    edge.blocked = Boolean(blocked);
+    edge.reason = blocked ? reason : null;
+    return edge;
+  }
+
+  getEdgeGeometry(edge) {
+    if (edge.geometry && edge.geometry.length >= 2) return edge.geometry;
+    const from = this.getNode(edge.from);
+    const to = this.getNode(edge.to);
+    return from && to ? [{ x: from.x, y: from.y }, { x: to.x, y: to.y }] : [];
+  }
 }
