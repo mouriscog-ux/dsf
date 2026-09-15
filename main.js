@@ -153,7 +153,9 @@
   // Aqui definimos a correspondência entre esse espaço abstrato e a área geográfica
   // real do Bairro da Liberdade (SP), para desenhar tudo em cima do mapa de verdade.
   var MODEL_BOUNDS = { minX: 40, maxX: 440, minY: 40, maxY: 360 };
-  var GEO_BOUNDS = { south: -23.5650, north: -23.5530, west: -46.6420, east: -46.6280 };
+  // Limite do cenário: envolve todos os nós iniciais, com cerca de 25 m de margem
+  // para que os marcadores das extremidades não sejam cortados pelo mapa.
+  var GEO_BOUNDS = { south: -23.55895, north: -23.55495, west: -46.63645, east: -46.63225 };
 
   function getNodeByXY(x, y) {
     if (!nodes) return null;
@@ -195,16 +197,16 @@
     return { x: x, y: y };
   }
 
-  // "Efeito parede": o usuário pode navegar dentro da Liberdade, mas não sai da área
+  // "Efeito parede": o usuário navega apenas dentro da área coberta pelos nós.
   var WALL_BOUNDS = L.latLngBounds(
-    L.latLng(GEO_BOUNDS.south - 0.0025, GEO_BOUNDS.west - 0.0025),
-    L.latLng(GEO_BOUNDS.north + 0.0025, GEO_BOUNDS.east + 0.0025)
+    L.latLng(GEO_BOUNDS.south, GEO_BOUNDS.west),
+    L.latLng(GEO_BOUNDS.north, GEO_BOUNDS.east)
   );
 
   var leafletMap = L.map('leaflet-map', {
     center: [(GEO_BOUNDS.north + GEO_BOUNDS.south) / 2, (GEO_BOUNDS.west + GEO_BOUNDS.east) / 2],
-    zoom: 16,
-    minZoom: 15,
+    zoom: 18,
+    minZoom: 17,
     maxZoom: 19,
     maxBounds: WALL_BOUNDS,
     maxBoundsViscosity: 1.0
@@ -217,7 +219,11 @@
 
   // Camadas redesenhadas a cada frame da simulação
   var streetsLayer  = L.layerGroup().addTo(leafletMap); // arestas do grafo (ruas)
-  var nodesLayer     = L.layerGroup().addTo(leafletMap); // cruzamentos / saídas / bloqueios
+  var nodesLayer     = L.layerGroup().addTo(leafletMap); // cruzamentos / bloqueios
+  // Saídas usam uma camada própria para não sumirem junto com os nós.
+  var exitsLayer     = L.layerGroup().addTo(leafletMap);
+  // Bloqueios também precisam continuar visíveis quando os nós são ocultados.
+  var hazardsLayer   = L.layerGroup().addTo(leafletMap);
   var routesLayer    = L.layerGroup().addTo(leafletMap); // rotas calculadas pelo A*
   var agentsLayer    = L.layerGroup().addTo(leafletMap); // pessoas em evacuação
   var costTagsLayer  = L.layerGroup().addTo(leafletMap); // rótulos f(n)/g(n)/h(n)
@@ -290,6 +296,7 @@
   function getNeighbors(nodeId) {
     var list = [];
     edges.forEach(function (e) {
+      if (e.blocked) return;
       if (e.from === nodeId) {
         var target = getNode(e.to);
         if (target && target.type !== 'blocked') list.push({ node: target, weight: e.weight });
@@ -493,7 +500,18 @@
 
   function snapToNearestStreet(lat, lng) {
     var minDistance = Infinity;
-    var bestPoint = { lat: lat, lng: lng, x: 0, y: 0, fromNodeId: 'N1', toNodeId: 'N2', progress: 0 };
+    var clickedXY = latLngToXY(lat, lng);
+    // Mantém o marcador no ponto clicado até encontrar uma rua elegível.
+    // O valor antigo (0, 0) podia posicionar alguns bloqueios fora do mapa.
+    var bestPoint = {
+      lat: lat,
+      lng: lng,
+      x: clickedXY.x,
+      y: clickedXY.y,
+      fromNodeId: null,
+      toNodeId: null,
+      progress: 0
+    };
 
     edges.forEach(function (e) {
       var n1 = getNode(e.from);
@@ -616,6 +634,11 @@
         totalExploredSum += res.nodesExplored;
         totalCostSum += res.cost;
         validCount++;
+      } else {
+        // Nunca mantenha uma rota anterior se ela passou a incluir um bloqueio.
+        ag.path = [ag.currentNodeId];
+        ag.pathIndex = 0;
+        ag.segmentProgress = 0;
       }
     });
 
@@ -630,6 +653,21 @@
     updateFireComparison(nodeId);
     addLog('<span class="warn">AGENTES RECALCULANDO ROTA VIA A*</span>');
     recalculateAllAgentPaths();
+  }
+
+  function blockStreetAtSnap(snap) {
+    if (!snap || !snap.fromNodeId || !snap.toNodeId) return 0;
+    var blockedSegments = 0;
+    edges.forEach(function (edge) {
+      var isSameStreetSegment =
+        (edge.from === snap.fromNodeId && edge.to === snap.toNodeId) ||
+        (edge.from === snap.toNodeId && edge.to === snap.fromNodeId);
+      if (isSameStreetSegment) {
+        edge.blocked = true;
+        blockedSegments++;
+      }
+    });
+    return blockedSegments;
   }
 
   function getApiUrl(endpoint) {
@@ -662,13 +700,12 @@
   }
 
   // GitHub Pages só hospeda os arquivos estáticos; portanto /api/graph não
-  // existe na versão publicada. Esta rota de contingência consulta espelhos
-  // do Overpass no navegador e monta uma malha dirigida por segmentos reais.
+  // existe na versão publicada. Esta rota de contingência consulta o OSM no
+  // navegador e tenta mais de um espelho do Overpass, pois a API pode responder 504.
   async function fetchGraphFromOverpass() {
     var query = '[out:json];way["highway"](' +
       GEO_BOUNDS.south + ',' + GEO_BOUNDS.west + ',' + GEO_BOUNDS.north + ',' + GEO_BOUNDS.east +
       ');out body;>;out skel qt;';
-
     var endpoints = [
       'https://overpass-api.de/api/interpreter',
       'https://overpass.kumi.systems/api/interpreter',
@@ -677,11 +714,11 @@
     var data = null;
     var errors = [];
 
-    for (var index = 0; index < endpoints.length; index++) {
+    for (var endpointIndex = 0; endpointIndex < endpoints.length; endpointIndex++) {
       var controller = new AbortController();
       var timeoutId = setTimeout(function () { controller.abort(); }, 10000);
       try {
-        var response = await fetch(endpoints[index], {
+        var response = await fetch(endpoints[endpointIndex], {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain' },
           body: query,
@@ -691,7 +728,7 @@
         data = await response.json();
         break;
       } catch (error) {
-        errors.push(endpoints[index] + ': ' + error.message);
+        errors.push(endpoints[endpointIndex] + ': ' + error.message);
       } finally {
         clearTimeout(timeoutId);
       }
@@ -794,6 +831,11 @@
               totalExploredSum += res.nodesExplored;
               totalCostSum += res.cost;
               validCount++;
+            } else {
+              // Sem caminho seguro, o agente para; não continua pela rota antiga.
+              ag.path = [ag.currentNodeId];
+              ag.pathIndex = 0;
+              ag.segmentProgress = 0;
             }
           });
 
@@ -815,6 +857,8 @@
   function renderGraph() {
     streetsLayer.clearLayers();
     nodesLayer.clearLayers();
+    exitsLayer.clearLayers();
+    hazardsLayer.clearLayers();
     routesLayer.clearLayers();
     // Mantém a camada e o registro dos marcadores sincronizados antes de redesenhar.
     // Limpar somente a camada faria o Map ainda apontar para ícones já removidos.
@@ -837,6 +881,38 @@
 
       // O marcador não intercepta os cliques das ferramentas do mapa.
       L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(nodesLayer);
+    });
+
+    // Mantém as saídas sempre acima dos nós e sem os estilos de open/closed set.
+    nodes.filter(function (n) { return n.type === 'exit'; }).forEach(function (exit) {
+      var exitPoint = safeNodeLatLng(exit);
+      var exitIcon = L.divIcon({
+        className: '',
+        html: '<div class="node exit" title="' + exit.name.replace(/"/g, '&quot;') + '"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      });
+      L.marker([exitPoint.lat, exitPoint.lng], {
+        icon: exitIcon,
+        interactive: false,
+        zIndexOffset: 1000
+      }).addTo(exitsLayer);
+    });
+
+    // Exibe bloqueios como riscos independentes da camada de nós oculta.
+    nodes.filter(function (n) { return n.type === 'blocked'; }).forEach(function (blocked) {
+      var blockedPoint = safeNodeLatLng(blocked);
+      var blockedIcon = L.divIcon({
+        className: '',
+        html: '<div class="node blocked" title="' + blocked.name.replace(/"/g, '&quot;') + '"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      });
+      L.marker([blockedPoint.lat, blockedPoint.lng], {
+        icon: blockedIcon,
+        interactive: false,
+        zIndexOffset: 900
+      }).addTo(hazardsLayer);
     });
 
     // Desenha os agentes (pessoas evacuando) em tempo real nas ruas do Leaflet
@@ -1325,24 +1401,49 @@
         if (d < minDist) { minDist = d; closest = n; }
       });
 
-      if (closest && minDist < 35) {
+      if (closest && minDist < 12) {
         igniteFireAtNode(closest, 'manual');
       } else {
+        var snapBlock = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
         var newId = 'NB' + (nodes.length + 1);
-        var newFireNode = { id: newId, name: 'Foco de incêndio (' + x + ',' + y + ')', x: x, y: y, type: 'blocked' };
+        var newFireNode = {
+          id: newId,
+          name: 'Bloqueio em ' + safeNodeName(getNode(snapBlock.fromNodeId), 'via'),
+          lat: snapBlock.lat,
+          lng: snapBlock.lng,
+          x: snapBlock.x,
+          y: snapBlock.y,
+          type: 'blocked'
+        };
         nodes.push(newFireNode);
+        var blockedSegments = blockStreetAtSnap(snapBlock);
         igniteFireAtNode(newFireNode, 'manual');
+        if (blockedSegments > 0) {
+          addLog('<span class="warn">TRECHO DA VIA BLOQUEADO — agentes procurando desvio</span>');
+        } else {
+          addLog('<span class="warn">BLOQUEIO REGISTRADO FORA DE UMA VIA CONECTADA</span>');
+        }
       }
+      // Mostra o bloqueio imediatamente, antes de aguardar o recálculo de rotas.
+      renderGraph();
       await recalculateAllAgentPathsAsync();
 
     } else if (activeTool === 'saida') {
       var newExitId = 'NE' + (nodes.length + 1);
-      nodes.push({ id: newExitId, name: 'Nova Saída (' + Math.round(x) + ',' + Math.round(y) + ')', x: x, y: y, type: 'exit' });
+      nodes.push({
+        id: newExitId,
+        name: 'Nova Saída (' + Math.round(x) + ',' + Math.round(y) + ')',
+        lat: evt.latlng.lat,
+        lng: evt.latlng.lng,
+        x: x,
+        y: y,
+        type: 'exit'
+      });
 
       var nearest = null;
       var minD = Infinity;
       nodes.forEach(function (n) {
-        if (n.id !== newExitId) {
+        if (n.id !== newExitId && n.type !== 'blocked') {
           var d = Math.hypot(n.x - x, n.y - y);
           if (d < minD) { minD = d; nearest = n; }
         }
@@ -1351,6 +1452,8 @@
         edges.push({ from: newExitId, to: nearest.id, weight: Math.round(minD), name: 'Acesso Saída' });
       }
       addLog('<span class="hl">Nova saída segura cadastrada</span>');
+      // A saída é visível no instante do clique, mesmo enquanto a rota é recalculada.
+      renderGraph();
       await recalculateAllAgentPathsAsync();
 
     } else if (activeTool === 'pessoa') {
@@ -1489,9 +1592,10 @@
       console.warn('API local indisponível; tentando Overpass diretamente', e);
     }
 
-    // Quando o servidor local não consegue acessar o OSM, a consulta direta
-    // do navegador repetiria a mesma falha e atrasaria a inicialização. Nesse
-    // caso, a malha local já disponível no projeto mantém a simulação utilizável.
+    // Ao rodar com o servidor local, uma resposta inválida significa que a
+    // Overpass falhou no servidor. Não repita as mesmas chamadas no navegador:
+    // a consulta direta no navegador repetiria a mesma falha e atrasaria a inicialização.
+    // Use a malha local e mantenha a simulação disponível imediatamente.
     if (!apiGraph && !isUsingLocalServer()) {
       try {
         apiGraph = await fetchGraphFromOverpass();
@@ -1501,7 +1605,7 @@
         addLog('<span class="warn">API de ruas indisponível — usando mapa de contingência</span>');
       }
     } else if (!apiGraph) {
-      addLog('<span class="warn">OpenStreetMap indisponível — usando malha local do cenário</span>');
+      addLog('<span class="warn">OSM indisponível nesta rede — usando malha local do cenário</span>');
     }
 
     if (apiGraph && apiGraph.nodes.length > 0 && apiGraph.edges.length > 0) {
