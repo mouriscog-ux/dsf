@@ -1310,7 +1310,10 @@
     if (elapsedSeconds % Math.max(2, Math.round(5 / Math.max(0.5, (fireSpreadInput ? parseFloat(fireSpreadInput.value) : 1)))) === 0) {
       spreadFire();
     }
-    await recalculateAllAgentPathsAsync();
+    // A animação avança continuamente no requestAnimationFrame. Recalcular
+    // aqui reiniciava pathIndex e segmentProgress a cada tick, impedindo que
+    // qualquer agente terminasse a primeira aresta. Rotas só são refeitas
+    // quando o grafo realmente muda (incêndio, bloqueio, saída ou reinício).
     pushChartPoint();
   }
 
