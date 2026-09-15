@@ -152,10 +152,13 @@
   // O grafo do simulador vive num espaço "modelo" abstrato (x,y em metros aproximados).
   // Aqui definimos a correspondência entre esse espaço abstrato e a área geográfica
   // real do Bairro da Liberdade (SP), para desenhar tudo em cima do mapa de verdade.
-  // Limite manual do cenário: aproximadamente 300 m no eixo leste-oeste e
-  // 220 m no eixo norte-sul, cobrindo apenas as ruas usadas na simulação.
+  // Limite manual do cenário, definido pelas referências solicitadas:
+  // norte: Viaduto Doutor Manoel José Chaves; sul: Estação São Joaquim;
+  // leste: EMEF Duque de Caxias; oeste: região do encontro da Rua Major Diogo
+  // com a Av. Brigadeiro Luís Antônio. Mantemos uma pequena margem para que
+  // os pontos de referência não sejam cortados pela borda.
   var MODEL_BOUNDS = { minX: 40, maxX: 440, minY: 40, maxY: 340 };
-  var GEO_BOUNDS = { south: -23.55785, north: -23.55587, west: -46.63565, east: -46.63272 };
+  var GEO_BOUNDS = { south: -23.56205, north: -23.55245, west: -46.64410, east: -46.62845 };
 
   function getNodeByXY(x, y) {
     if (!nodes) return null;
@@ -205,11 +208,11 @@
 
   var leafletMap = L.map('leaflet-map', {
     center: [(GEO_BOUNDS.north + GEO_BOUNDS.south) / 2, (GEO_BOUNDS.west + GEO_BOUNDS.east) / 2],
-    zoom: 18,
-    // Sem isto o Leaflet arredonda o fitBounds para o zoom 18 e exibe uma
-    // área maior que o cenário manual. Com 0.1 ele encaixa o retângulo exato.
+    zoom: 16,
+    // O novo recorte tem cerca de 1 km; o zoom mínimo 16 permite que o
+    // fitBounds exiba a área inteira sem liberar a navegação para fora dela.
     zoomSnap: 0.1,
-    minZoom: 18,
+    minZoom: 16,
     maxZoom: 19,
     maxBounds: WALL_BOUNDS,
     maxBoundsViscosity: 1.0
@@ -761,7 +764,10 @@
 
     function nodeFor(osmId, roadName) {
       var osm = osmNodes.get(osmId);
-      if (!osm) return null;
+      // O Overpass devolve a geometria completa de vias que cruzam o retângulo.
+      // Não deixe esses trechos incluírem nós além da área do cenário.
+      if (!osm || osm.lat < GEO_BOUNDS.south || osm.lat > GEO_BOUNDS.north ||
+          osm.lng < GEO_BOUNDS.west || osm.lng > GEO_BOUNDS.east) return null;
       var id = 'node_' + osmId;
       if (!graphNodes.has(id)) {
         graphNodes.set(id, { id: id, osmId: osmId, lat: osm.lat, lng: osm.lng, name: roadName || 'Trecho de via', type: 'normal' });

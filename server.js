@@ -207,7 +207,7 @@ async function fetchOSMData(south, west, north, east) {
   throw new Error(`Serviços Overpass indisponíveis (${errors.join('; ')})`);
 }
 
-function processOSMData(data) {
+function processOSMData(data, bounds) {
 
   const osmNodes = new Map();
 
@@ -266,7 +266,8 @@ function processOSMData(data) {
 
   const rawGraph = createGraphFromRoads(
     roads,
-    osmNodes
+    osmNodes,
+    bounds
   );
   const graph = simplifyGraphForSimulation(rawGraph);
 
@@ -304,7 +305,7 @@ function processOSMData(data) {
 
 }
 
-function createGraphFromRoads(roads, osmNodes) {
+function createGraphFromRoads(roads, osmNodes, bounds) {
   const nodes = [];
   const edges = [];
 
@@ -317,6 +318,13 @@ function createGraphFromRoads(roads, osmNodes) {
     if (!osmNode) {
       return null;
     }
+
+    // O Overpass inclui a geometria completa de vias que tocam o bbox.
+    // Descartar nós externos aqui mantém a malha estritamente no recorte.
+    if (bounds && (
+      osmNode.lat < bounds.south || osmNode.lat > bounds.north ||
+      osmNode.lng < bounds.west || osmNode.lng > bounds.east
+    )) return null;
 
     const graphNodeId = `node_${osmNodeId}`;
 
@@ -519,7 +527,7 @@ const server = http.createServer(async (req, res) => {
         east
       );
   
-      const mapData = processOSMData(osmData);
+      const mapData = processOSMData(osmData, { south, west, north, east });
       res.writeHead(200, {
         'Content-Type': 'application/json'
       });
