@@ -206,6 +206,9 @@
   var leafletMap = L.map('leaflet-map', {
     center: [(GEO_BOUNDS.north + GEO_BOUNDS.south) / 2, (GEO_BOUNDS.west + GEO_BOUNDS.east) / 2],
     zoom: 18,
+    // Sem isto o Leaflet arredonda o fitBounds para o zoom 18 e exibe uma
+    // área maior que o cenário manual. Com 0.1 ele encaixa o retângulo exato.
+    zoomSnap: 0.1,
     minZoom: 18,
     maxZoom: 19,
     maxBounds: WALL_BOUNDS,
