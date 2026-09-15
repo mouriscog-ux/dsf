@@ -867,21 +867,8 @@
     // Desenhos traçados de ruas e rotas sobre o mapa foram removidos
     // para exibir o mapa limpo com marcadores e agentes.
 
-    // Nós comuns ficam invisíveis; apenas elementos relevantes ao cenário são exibidos.
-    nodes.forEach(function (n) {
-      if (n.type !== 'exit' && n.type !== 'blocked') return;
-
-      var p = xyToLatLng(n.x, n.y);
-      var icon = L.divIcon({
-        className: '',
-        html: '<div class="node ' + n.type + '" title="' + n.name.replace(/"/g, '&quot;') + '"></div>',
-        iconSize: [13, 13],
-        iconAnchor: [6.5, 6.5]
-      });
-
-      // O marcador não intercepta os cliques das ferramentas do mapa.
-      L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(nodesLayer);
-    });
+    // Nós comuns ficam invisíveis; as saídas e os bloqueios usam camadas
+    // próprias abaixo, para permanecerem visíveis acima de outros elementos.
 
     // Mantém as saídas sempre acima dos nós e sem os estilos de open/closed set.
     nodes.filter(function (n) { return n.type === 'exit'; }).forEach(function (exit) {
