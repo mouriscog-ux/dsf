@@ -658,28 +658,42 @@
   }
 
   // GitHub Pages só hospeda os arquivos estáticos; portanto /api/graph não
-  // existe na versão publicada. Esta rota de contingência consulta o mesmo
-  // Overpass/OSM no navegador e monta uma malha dirigida por segmentos reais.
+  // existe na versão publicada. Esta rota de contingência consulta espelhos
+  // do Overpass no navegador e monta uma malha dirigida por segmentos reais.
   async function fetchGraphFromOverpass() {
     var query = '[out:json];way["highway"](' +
       GEO_BOUNDS.south + ',' + GEO_BOUNDS.west + ',' + GEO_BOUNDS.north + ',' + GEO_BOUNDS.east +
       ');out body;>;out skel qt;';
-    var controller = new AbortController();
-    var timeoutId = setTimeout(function () { controller.abort(); }, 12000);
-    var response;
-    try {
-      response = await fetch('https://overpass-api.de/api/interpreter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: query,
-        signal: controller.signal
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-    if (!response.ok) throw new Error('Overpass respondeu ' + response.status);
 
-    var data = await response.json();
+    var endpoints = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+      'https://overpass.private.coffee/api/interpreter'
+    ];
+    var data = null;
+    var errors = [];
+
+    for (var index = 0; index < endpoints.length; index++) {
+      var controller = new AbortController();
+      var timeoutId = setTimeout(function () { controller.abort(); }, 10000);
+      try {
+        var response = await fetch(endpoints[index], {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: query,
+          signal: controller.signal
+        });
+        if (!response.ok) throw new Error('respondeu ' + response.status);
+        data = await response.json();
+        break;
+      } catch (error) {
+        errors.push(endpoints[index] + ': ' + error.message);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    if (!data) throw new Error('Serviços Overpass indisponíveis (' + errors.join('; ') + ')');
     var osmNodes = new Map();
     (data.elements || []).forEach(function (el) {
       if (el.type === 'node') osmNodes.set(el.id, { id: el.id, lat: el.lat, lng: el.lon });
