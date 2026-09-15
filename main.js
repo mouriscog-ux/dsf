@@ -1232,7 +1232,10 @@
     if (dt > 0.1) dt = 0.1;
 
     if (state === STATE.RUNNING) {
-      var stepRate = 0.08 * speed * dt;
+      // Progresso de uma aresta por segundo. Com a velocidade padrão (1,5×),
+      // uma conexão é percorrida em ~0,9 s; antes eram ~8,3 s e o movimento
+      // praticamente não era perceptível no mapa.
+      var stepRate = 0.75 * speed * dt;
 
       agents.forEach(function (ag) {
         if (ag.evacuated) return;
