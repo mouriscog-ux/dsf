@@ -928,9 +928,9 @@
       var blockedPoint = safeNodeLatLng(blocked);
       var blockedIcon = L.divIcon({
         className: '',
-        html: '<div class="node blocked" title="' + blocked.name.replace(/"/g, '&quot;') + '"></div>',
-        iconSize: [16, 16],
-        iconAnchor: [8, 8]
+        html: '<div class="node blocked fire-active" title="' + blocked.name.replace(/"/g, '&quot;') + '"></div>',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
       });
       L.marker([blockedPoint.lat, blockedPoint.lng], {
         icon: blockedIcon,
@@ -1424,35 +1424,26 @@
     var y = xy.y;
 
     if (activeTool === 'bloqueio') {
-      var closest = null;
-      var minDist = Infinity;
-      nodes.forEach(function (n) {
-        var d = Math.hypot(n.x - x, n.y - y);
-        if (d < minDist) { minDist = d; closest = n; }
-      });
-
-      if (closest && minDist < 12) {
-        igniteFireAtNode(closest, 'manual');
+      // Cada clique cria um risco próprio. Antes, cliques próximos de um nó
+      // existente eram agrupados nele e pareciam não registrar bloqueio algum.
+      var snapBlock = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
+      var newId = 'NB' + (nodes.length + 1);
+      var newFireNode = {
+        id: newId,
+        name: 'Bloqueio em ' + safeNodeName(getNode(snapBlock.fromNodeId), 'via'),
+        lat: snapBlock.lat,
+        lng: snapBlock.lng,
+        x: snapBlock.x,
+        y: snapBlock.y,
+        type: 'blocked'
+      };
+      nodes.push(newFireNode);
+      var blockedSegments = blockStreetAtSnap(snapBlock);
+      igniteFireAtNode(newFireNode, 'manual');
+      if (blockedSegments > 0) {
+        addLog('<span class="warn">TRECHO DA VIA BLOQUEADO — agentes procurando desvio</span>');
       } else {
-        var snapBlock = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
-        var newId = 'NB' + (nodes.length + 1);
-        var newFireNode = {
-          id: newId,
-          name: 'Bloqueio em ' + safeNodeName(getNode(snapBlock.fromNodeId), 'via'),
-          lat: snapBlock.lat,
-          lng: snapBlock.lng,
-          x: snapBlock.x,
-          y: snapBlock.y,
-          type: 'blocked'
-        };
-        nodes.push(newFireNode);
-        var blockedSegments = blockStreetAtSnap(snapBlock);
-        igniteFireAtNode(newFireNode, 'manual');
-        if (blockedSegments > 0) {
-          addLog('<span class="warn">TRECHO DA VIA BLOQUEADO — agentes procurando desvio</span>');
-        } else {
-          addLog('<span class="warn">BLOQUEIO REGISTRADO FORA DE UMA VIA CONECTADA</span>');
-        }
+        addLog('<span class="warn">BLOQUEIO REGISTRADO FORA DE UMA VIA CONECTADA</span>');
       }
       // Mostra o bloqueio imediatamente, antes de aguardar o recálculo de rotas.
       renderGraph();
