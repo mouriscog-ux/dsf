@@ -82,7 +82,7 @@
       <!-- Slide 3 -->
       <div class="tutorial-slide" data-slide="3">
         <div class="slide-step">Passo 3 de 4</div>
-        <h3>Interatividade para a Feira de Ciências</h3>
+        <h3>Interatividade para a FECART</h3>
         <p>Demonstre para os jurados como o algoritmo reage em tempo real:</p>
         <ul class="slide-list">
           <li>🔥 <strong>Adicionar Bloqueio</strong>: Clique no mapa para simular incêndios ou escombros. Os agentes recalculam a rota instantaneamente!</li>
@@ -160,7 +160,7 @@
         </div>
 
         <div class="slider-row fire-control">
-          <div class="slider-label"><span>Intensidade do Fogo</span><span id="fire-intensity-label">2.0×</span></div>
+          <div class="slider-label"><span>tamanho do bloqueio</span><span id="fire-intensity-label">2.0×</span></div>
           <input class="range-control" id="fire-intensity" type="range" min="1" max="5" step="0.5" value="2">
         </div>
 
@@ -213,7 +213,7 @@
         <div class="stat-card"><span class="lbl">Resposta A*</span><span class="num safe" id="stat-fire-astar">—</span></div>
         <div class="stat-card"><span class="lbl">Resposta Dijkstra</span><span class="num" id="stat-fire-dijkstra">—</span></div>
 
-        <div class="panel-title spaced">Evacuados / tempo</div>
+        <div class="panel-title spaced">Evacuados</div>
         <div class="chart-wrap">
           <div class="chart-line">
             <div class="chart-y-axis">
@@ -321,11 +321,9 @@
       <div class="panel">
         <div class="panel-title">Legenda do Mapa</div>
         <div class="map-legend mapa-legend-block">
-          <div class="legend-item"><span class="legend-swatch" style="background:var(--surface-raised);border:2px solid var(--text-muted);"></span> Cruzamento</div>
           <div class="legend-item"><span class="legend-swatch" style="background:var(--safe);"></span> Saída segura</div>
           <div class="legend-item"><span class="legend-swatch" style="background:var(--danger);"></span> Bloqueio / incêndio</div>
           <div class="legend-item"><span class="legend-swatch" style="background:var(--amber);border-radius:50% 50% 50% 4px;"></span> Agente</div>
-          <div class="legend-item"><span class="legend-swatch" style="background:transparent;border-top:2.5px dashed var(--safe);width:14px;height:0;border-radius:0;"></span> Rota (A*)</div>
         </div>
       </div>
     </div>
