@@ -368,12 +368,11 @@ h1, h2, h3, .display {
 }
 
 .brand-mark {
-  width: 38px; height: 38px;
-  border-radius: 50% 50% 8px 8px;
-  background: linear-gradient(160deg, var(--cyan), #0284c7);
-  position: relative;
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
   flex-shrink: 0;
-  box-shadow: 0 0 18px var(--cyan-dim);
+  filter: drop-shadow(0 0 8px rgba(255, 112, 24, 0.45));
 }
 
 .brand-text .name {
@@ -969,6 +968,14 @@ button.nav-btn.tutorial-trigger:hover {
   display: grid;
   grid-template-columns: 1.3fr 1fr;
   gap: 18px;
+  align-items: stretch;
+}
+
+/* Aproveita o espaço vertical das telas informativas, deixando os dois
+   painéis com a mesma presença visual da área de simulação. */
+#view-algoritmo .panel,
+#view-mapa .panel {
+  min-height: 430px;
 }
 
 .algo-heading { font-size: 22px; margin: 0 0 14px; }
@@ -1003,4 +1010,6 @@ button.nav-btn.tutorial-trigger:hover {
 @media (max-width: 980px) {
   .main-grid { grid-template-columns: 1fr; }
   .algo-grid, .mapa-grid { grid-template-columns: 1fr; }
+  #view-algoritmo .panel,
+  #view-mapa .panel { min-height: auto; }
 }
