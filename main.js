@@ -948,6 +948,11 @@
     candidates.sort(function (a, b) { return a.distance - b.distance; });
     var picked = candidates[0];
     igniteFireAtNode(picked.node, 'spread');
+    // O espalhamento acontece pelo temporizador, sem clique no mapa. Atualize
+    // as camadas logo após acender o novo ponto para que o bloqueio e a zona
+    // de risco apareçam imediatamente na tela.
+    renderGraph();
+    updateStatsDisplay();
   }
 
   /* ---------- 8. SIMULAÇÃO E MOVIMENTAÇÃO DE AGENTES ---------- */
