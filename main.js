@@ -1,6 +1,6 @@
 // ============================================================
 // URBANISA TECH — SmartEvac Liberdade
-// Engine de Simulação & Algoritmos de Busca (A* e Dijkstra)
+// Engine de Simulação e Busca de Rotas A*
 // Feira de Ciências 2026 · São Paulo
 // ============================================================
 
@@ -100,15 +100,11 @@
   var statTotal     = document.getElementById('stat-total');
   var statTempo     = document.getElementById('stat-tempo');
   var statNos       = document.getElementById('stat-nos');
-  var statCusto     = document.getElementById('stat-custo');
-  var statFireAstar = document.getElementById('stat-fire-astar');
-  var statFireDijkstra = document.getElementById('stat-fire-dijkstra');
+  var statPresos    = document.getElementById('stat-presos');
   var fieldAgentes  = document.getElementById('field-agentes');
 
   var logList          = document.getElementById('log-list');
   var mapCanvas        = document.getElementById('map-canvas');
-  var overlayContainer = document.getElementById('overlay-container');
-  var mapToolbar       = document.getElementById('map-toolbar');
 
   var evacLine    = document.getElementById('evac-line');
   var evacArea    = document.getElementById('evac-area');
@@ -253,7 +249,6 @@
   var nodes = [];
   var edges = [];
   var activeFires = [];
-  var lastFireComparison = null;
 
   function getNode(id) {
     for (var i = 0; i < nodes.length; i++) {
@@ -338,7 +333,7 @@
     return Math.sqrt(dx * dx + dy * dy);
   }
 
-  /* ---------- 5. MOTOR DE BUSCA (A* e Dijkstra) ---------- */
+  /* ---------- 5. MOTOR DE BUSCA A* ---------- */
   function findPath(startId, useHeuristic) {
     var startNode = getNode(startId);
     if (!startNode || startNode.type === 'blocked') return null;
@@ -439,33 +434,8 @@
   var evacuados = 0;
   var elapsedSeconds = 0;
   var speed = 1.5;
-  var activeTab = 'tab-mapa';
-
   var tickTimer = null;
   var agents = [];
-
-  function measurePath(startId, useHeuristic) {
-    var t0 = performance.now();
-    var res = findPath(startId, useHeuristic);
-    var responseMs = Math.max(1, Math.round((performance.now() - t0) * 1000) / 1000);
-    return {
-      responseMs: responseMs,
-      nodesExplored: res ? res.nodesExplored : 0,
-      cost: res ? res.cost : 0
-    };
-  }
-
-  function updateFireComparison(startId) {
-    var astar = measurePath(startId || 'N1', true);
-    var dijkstra = measurePath(startId || 'N1', false);
-    lastFireComparison = { astar: astar, dijkstra: dijkstra };
-    if (statFireAstar && activeFires.length > 0) {
-      statFireAstar.textContent = astar.responseMs + 'ms · ' + astar.nodesExplored + ' nós';
-    }
-    if (statFireDijkstra && activeFires.length > 0) {
-      statFireDijkstra.textContent = dijkstra.responseMs + 'ms · ' + dijkstra.nodesExplored + ' nós';
-    }
-  }
 
   function snapToNearestStreet(lat, lng) {
     var minDistance = Infinity;
@@ -611,7 +581,8 @@
       lng: pos.lng,
       x: randNode ? randNode.x : 0,
       y: randNode ? randNode.y : 0,
-      evacuated: false
+      evacuated: false,
+      trapped: !res
     };
   }
 
@@ -650,6 +621,7 @@
         ag.path = res.path;
         ag.pathIndex = 0;
         ag.segmentProgress = 0;
+        ag.trapped = false;
         totalExploredSum += res.nodesExplored;
         totalCostSum += res.cost;
         validCount++;
@@ -658,18 +630,17 @@
         ag.path = [ag.currentNodeId];
         ag.pathIndex = 0;
         ag.segmentProgress = 0;
+        ag.trapped = true;
       }
     });
 
     if (validCount > 0) {
       statNos.textContent = Math.round(totalExploredSum / validCount);
-      statCusto.textContent = (totalCostSum / validCount).toFixed(1);
     }
-    updateFireComparison(validCount > 0 ? agents[0].currentNodeId : 'N1');
+
   }
 
-  function forceRecalculateForFire(nodeId) {
-    updateFireComparison(nodeId);
+  function forceRecalculateForFire() {
     addLog('<span class="warn">AGENTES RECALCULANDO ROTA VIA A*</span>');
     recalculateAllAgentPaths();
   }
@@ -865,6 +836,7 @@
               ag.path = res.path;
               ag.pathIndex = 0;
               ag.segmentProgress = 0;
+              ag.trapped = false;
               totalExploredSum += res.nodesExplored;
               totalCostSum += res.cost;
               validCount++;
@@ -873,13 +845,14 @@
               ag.path = [ag.currentNodeId];
               ag.pathIndex = 0;
               ag.segmentProgress = 0;
+              ag.trapped = true;
             }
           });
 
           if (validCount > 0) {
             statNos.textContent = Math.round(totalExploredSum / validCount);
-            statCusto.textContent = (totalCostSum / validCount).toFixed(1);
           }
+
           return;
         }
       }
@@ -942,11 +915,10 @@
     // Desenha os agentes (pessoas evacuando) em tempo real nas ruas do Leaflet
     updateAgentMarkers();
 
-    renderActiveTabOverlay();
+    renderFireZones();
   }
 
-  function renderActiveTabOverlay() {
-    overlayContainer.innerHTML = '';
+  function renderFireZones() {
     costTagsLayer.clearLayers();
     activeFires.forEach(function (fire) {
       var p = xyToLatLng(fire.x, fire.y);
@@ -958,90 +930,6 @@
       });
       L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(costTagsLayer);
     });
-
-    if (activeTab === 'tab-custo') {
-      var res = findPath('N1', true);
-      if (res) {
-        nodes.forEach(function (n) {
-          if (n.type === 'blocked') return;
-          var g = res.gScore[n.id];
-          var f = res.fScore[n.id];
-          var h = f !== Infinity && g !== Infinity ? (f - g) : 0;
-          if (g === Infinity) return;
-
-          var p = xyToLatLng(n.x, n.y);
-          var smoke = getFireDangerAtNode(n);
-          var icon = L.divIcon({
-            className: '',
-            html: '<div class="cost-tag">f:' + Math.round(f) + ' (g:' + Math.round(g) + '+h:' + Math.round(h) + ')' + (smoke > 0 ? '<br>fumaça +' + smoke.toFixed(1) + '×' : '') + '</div>',
-            iconSize: null
-          });
-          L.marker([p.lat, p.lng], { icon: icon, interactive: false }).addTo(costTagsLayer);
-        });
-      }
-
-      var card = document.createElement('div');
-      card.className = 'overlay-card';
-      card.innerHTML = '<div style="font-weight:700; color:var(--cyan); margin-bottom:4px;">Análise do Custo f(n) = g(n) + h(n)</div>' +
-        '<div style="font-size:12px; color:var(--text-muted);">' +
-        'Cada nó exibe o custo de rota percorrido <strong>g(n)</strong> somado à heurística Euclidiana <strong>h(n)</strong>. O A* sempre expande primeiro o nó com menor <strong>f(n)</strong>.' +
-        '</div>';
-      overlayContainer.appendChild(card);
-
-    } else if (activeTab === 'tab-nos') {
-      var astarSample = findPath('N1', true);
-      var nodesExploredCount = astarSample ? astarSample.nodesExplored : 0;
-      var totalGraphNodes = nodes.length;
-      var savingsPct = (((totalGraphNodes - nodesExploredCount) / totalGraphNodes) * 100).toFixed(1);
-
-      var cardNos = document.createElement('div');
-      cardNos.className = 'overlay-card';
-      cardNos.innerHTML = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">' +
-        '<span style="font-weight:700; color:var(--amber);">Espaço de Busca — A*</span>' +
-        '<span class="badge-savings">' + savingsPct + '% de nós poupados</span>' +
-        '</div>' +
-        '<div style="font-size:12px; color:var(--text-muted); line-height:1.5;">' +
-        '• <span style="color:var(--amber); font-weight:600;">Amarelo</span>: Fila de Prioridade (Open Set)<br>' +
-        '• <span style="color:var(--purple); font-weight:600;">Roxo</span>: Nós já avaliados e expandidos (Closed Set: ' + nodesExploredCount + '/' + totalGraphNodes + ' nós)' +
-        '</div>';
-      overlayContainer.appendChild(cardNos);
-
-    } else if (activeTab === 'tab-comparar') {
-      var astarRes = findPath('N1', true);
-      var dijkstraRes = findPath('N1', false);
-
-      var astarNodes = astarRes ? astarRes.nodesExplored : 0;
-      var dijkstraNodes = dijkstraRes ? dijkstraRes.nodesExplored : 0;
-      var astarCost = astarRes ? Math.round(astarRes.cost) : 0;
-      var dijkstraCost = dijkstraRes ? Math.round(dijkstraRes.cost) : 0;
-
-      var nodeDiff = dijkstraNodes > 0 ? Math.round(((dijkstraNodes - astarNodes) / dijkstraNodes) * 100) : 0;
-
-      var cardComp = document.createElement('div');
-      cardComp.className = 'overlay-card';
-      cardComp.innerHTML = '<div style="font-weight:700; color:var(--text); margin-bottom:6px;">' +
-        'Comparativo para a Banca Julgadora: A* vs. Dijkstra' +
-        '</div>' +
-        '<div class="compare-grid">' +
-        '  <div class="compare-box astar-box">' +
-        '    <div class="title">Algoritmo A* <span class="badge-savings">-' + nodeDiff + '% nós</span></div>' +
-        '    <div class="compare-metric"><span>Nós explorados:</span><strong>' + astarNodes + ' nós</strong></div>' +
-        '    <div class="compare-metric"><span>Custo do caminho:</span><strong>' + astarCost + 'm</strong></div>' +
-        '    <div class="compare-metric"><span>Heurística h(n):</span><strong>Euclidiana</strong></div>' +
-        '  </div>' +
-        '  <div class="compare-box dijkstra-box">' +
-        '    <div class="title">Algoritmo Dijkstra</div>' +
-        '    <div class="compare-metric"><span>Nós explorados:</span><strong>' + dijkstraNodes + ' nós</strong></div>' +
-        '    <div class="compare-metric"><span>Custo do caminho:</span><strong>' + dijkstraCost + 'm</strong></div>' +
-        '    <div class="compare-metric"><span>Heurística h(n):</span><strong>h(n) = 0</strong></div>' +
-        '  </div>' +
-        '</div>' +
-        (lastFireComparison ? '<div class="fire-comparison">' +
-        '<div class="compare-metric"><span>Resposta A* ao incêndio:</span><strong>' + lastFireComparison.astar.responseMs + 'ms · ' + lastFireComparison.astar.nodesExplored + ' nós</strong></div>' +
-        '<div class="compare-metric"><span>Resposta Dijkstra:</span><strong>' + lastFireComparison.dijkstra.responseMs + 'ms · ' + lastFireComparison.dijkstra.nodesExplored + ' nós</strong></div>' +
-        '</div>' : '');
-      overlayContainer.appendChild(cardComp);
-    }
   }
 
   function spreadFire() {
@@ -1062,26 +950,7 @@
     igniteFireAtNode(picked.node, 'spread');
   }
 
-  /* ---------- 8. INTERAÇÃO DAS TABS DO MAPA ---------- */
-  var chips = mapToolbar.querySelectorAll('.chip');
-  chips.forEach(function (chip) {
-    chip.addEventListener('click', function () {
-      chips.forEach(function (c) { c.classList.remove('active'); });
-      chip.classList.add('active');
-      activeTab = chip.dataset.tab || 'tab-mapa';
-
-      var tabNames = {
-        'tab-mapa': 'Visão Geral do Mapa',
-        'tab-custo': 'Análise de Custo f(n) = g(n) + h(n)',
-        'tab-nos': 'Nós Explorados e Busca',
-        'tab-comparar': 'Comparativo A* vs. Dijkstra'
-      };
-      addLog('Aba selecionada: ' + (tabNames[activeTab] || activeTab));
-      renderGraph();
-    });
-  });
-
-  /* ---------- 9. SIMULAÇÃO E MOVIMENTAÇÃO DE AGENTES ---------- */
+  /* ---------- 8. SIMULAÇÃO E MOVIMENTAÇÃO DE AGENTES ---------- */
   function formatTime(totalSec) {
     var m = Math.floor(totalSec / 60);
     var s = totalSec % 60;
@@ -1092,6 +961,7 @@
     statEvacuados.textContent = evacuados;
     statTotal.textContent = totalAgentes;
     statTempo.textContent = formatTime(elapsedSeconds);
+    statPresos.textContent = agents.filter(function (ag) { return !ag.evacuated && ag.trapped; }).length;
   }
 
   var evacHistory = [];
@@ -1160,12 +1030,18 @@
     if (state === STATE.RUNNING) {
       statusDot.classList.add('running');
       statusText.textContent = 'Simulação em execução';
+      btnIniciar.textContent = 'Simulação rodando';
+      btnPausar.textContent = '⏸ Pausar';
     } else if (state === STATE.PAUSED) {
       statusDot.classList.add('paused');
       statusText.textContent = 'Simulação pausada';
+      btnIniciar.textContent = '▶ Retomar simulação';
+      btnPausar.textContent = 'Simulação pausada';
     } else {
       statusDot.classList.add('stopped');
       statusText.textContent = 'Simulação parada';
+      if (!btnIniciar.disabled) btnIniciar.textContent = '▶ Iniciar simulação';
+      btnPausar.textContent = '⏸ Pausar';
     }
   }
 
@@ -1179,11 +1055,6 @@
   }
 
   function updateAgentMarkers() {
-    if (activeTab !== 'tab-mapa') {
-      clearAgentMarkers();
-      return;
-    }
-
     var isRunning = (state === STATE.RUNNING);
     var activeAgentIds = new Set();
     agents.forEach(function (ag) {
@@ -1255,6 +1126,9 @@
               ag.path = newRes.path;
               ag.pathIndex = 0;
               ag.segmentProgress = 0;
+              ag.trapped = false;
+            } else {
+              ag.trapped = true;
             }
           }
           return;
@@ -1292,8 +1166,15 @@
         }
       });
 
+      var remainingAgents = agents.filter(function (ag) { return !ag.evacuated; });
+      var allRemainingTrapped = remainingAgents.length > 0 && remainingAgents.every(function (ag) { return ag.trapped; });
+
       if (evacuados >= totalAgentes) {
         addLog('<span class="hl">Todos os ' + totalAgentes + ' agentes foram evacuados com sucesso!</span>');
+        stopTimer();
+        setStatus(STATE.STOPPED);
+      } else if (allRemainingTrapped) {
+        addLog('<span class="warn">Simulação encerrada: ' + remainingAgents.length + ' agente(s) sem rota de evacuação.</span>');
         stopTimer();
         setStatus(STATE.STOPPED);
       }
@@ -1301,9 +1182,7 @@
       updateStatsDisplay();
     }
 
-    if (activeTab === 'tab-mapa') {
-      updateAgentMarkers();
-    }
+    updateAgentMarkers();
 
     requestAnimationFrame(animateLoop);
   }
@@ -1344,8 +1223,6 @@
 
     setStatus(STATE.RUNNING);
     startTimer();
-    btnIniciar.textContent = 'Simulação rodando';
-    btnPausar.textContent = '⏸ Pausar';
   });
 
   btnPausar.addEventListener('click', function () {
@@ -1353,8 +1230,6 @@
     stopTimer();
     setStatus(STATE.PAUSED);
     addLog('Simulação pausada');
-    btnIniciar.textContent = '▶ Iniciar simulação';
-    btnPausar.textContent = 'Simulação pausada';
   });
 
   btnReiniciar.addEventListener('click', async function () {
@@ -1364,7 +1239,6 @@
     nodes = JSON.parse(JSON.stringify(apiInitialNodes));
     edges = JSON.parse(JSON.stringify(apiInitialEdges));
     activeFires = [];
-    lastFireComparison = null;
     totalAgentes = 50;
 
     clearAgentMarkers();
@@ -1375,8 +1249,6 @@
     fieldAgentes.textContent = totalAgentes;
     statTotal.textContent = totalAgentes;
     updateStatsDisplay();
-    if (statFireAstar) statFireAstar.textContent = '—';
-    if (statFireDijkstra) statFireDijkstra.textContent = '—';
     setStatus(STATE.STOPPED);
     resetLog();
     resetChart();
@@ -1385,8 +1257,6 @@
     mapCanvas.classList.remove('tool-active');
     activeTool = null;
 
-    btnIniciar.textContent = '▶ Iniciar simulação';
-    btnPausar.textContent = '⏸ Pausar';
     renderGraph();
   });
 
@@ -1491,16 +1361,51 @@
       }
       totalAgentes += 1;
       var snap = snapToNearestStreet(evt.latlng.lat, evt.latlng.lng);
-      // O ponto clicado é associado ao extremo mais próximo da rua. Isso
-      // preserva a invariável de que todo movimento começa em uma aresta real.
-      var startId = snap.progress <= 0.5 ? snap.fromNodeId : snap.toNodeId;
+      // O agente é inserido exatamente onde foi clicado. Quando o ponto está
+      // perto de uma rua, criamos um nó de acesso; caso não haja rota, ele
+      // continua visível e entra na estatística de agentes presos.
+      var startId = 'NP' + (nodes.length + 1);
+      var nearestDistance = Math.hypot(evt.latlng.lat - snap.lat, evt.latlng.lng - snap.lng);
+      var isNearStreet = snap.fromNodeId && snap.toNodeId && nearestDistance < 0.00025;
+      nodes.push({
+        id: startId,
+        name: 'Agente ' + totalAgentes,
+        lat: evt.latlng.lat,
+        lng: evt.latlng.lng,
+        x: x,
+        y: y,
+        type: 'normal',
+        temporary: true
+      });
+      if (isNearStreet) {
+        var accessWeight = Math.max(1, Math.round(Math.hypot(x - snap.x, y - snap.y)));
+        edges.push(
+          { from: startId, to: snap.fromNodeId, weight: accessWeight, name: 'Acesso do agente', directed: true },
+          { from: startId, to: snap.toNodeId, weight: accessWeight, name: 'Acesso do agente', directed: true }
+        );
+      }
       var newAgent = createAgent(totalAgentes, startId);
+      // createAgent evita origens sem saída para a população inicial. Para um
+      // clique manual, preserve o ponto escolhido mesmo quando ele é isolado.
+      newAgent.currentNodeId = startId;
+      newAgent.lat = evt.latlng.lat;
+      newAgent.lng = evt.latlng.lng;
+      newAgent.x = x;
+      newAgent.y = y;
+      var manualPath = findPath(startId, true);
+      newAgent.path = manualPath ? manualPath.path : [startId];
+      newAgent.pathIndex = 0;
+      newAgent.segmentProgress = 0;
+      newAgent.trapped = !manualPath;
       agents.push(newAgent);
 
       fieldAgentes.textContent = totalAgentes;
       statTotal.textContent = totalAgentes;
-      addLog('Novo agente posicionado na rua');
+      addLog(newAgent.trapped
+        ? '<span class="warn">Agente inserido sem rota de evacuação</span>'
+        : 'Novo agente posicionado com rota de evacuação');
       await recalculateAllAgentPathsAsync();
+      updateStatsDisplay();
     }
 
     renderGraph();

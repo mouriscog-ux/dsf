@@ -21,7 +21,6 @@
     <div class="urbanisa-pills">
       <span class="pill"> Bairro da Liberdade</span>
       <span class="pill"> Algoritmo A*</span>
-      <span class="pill"> Comparativo Dijkstra</span>
       <span class="pill"> Obstáculos em Tempo Real</span>
     </div>
 
@@ -94,14 +93,10 @@
       <!-- Slide 4 -->
       <div class="tutorial-slide" data-slide="4">
         <div class="slide-step">Passo 4 de 4</div>
-        <h3>Aba Comparar c/ Dijkstra</h3>
-        <p>
-          Clique na aba <strong>"Comparar c/ Dijkstra"</strong> no topo do mapa para mostrar aos jurados o grande trunfo do projeto:
-          o A* reduz em até <strong>70% os nós explorados</strong> comparado ao algoritmo de Dijkstra tradicional, mantendo
-          a garantia de rota perfeita!
-        </p>
+        <h3>Monitoramento da evacuação</h3>
+        <p>Acompanhe no painel a quantidade de pessoas evacuadas e o tempo transcorrido da simulação.</p>
         <div class="slide-highlight">
-          🎯 <em>Dica para a apresentação: Mostre a aba de comparação após causar um incêndio no mapa!</em>
+          🎯 <em>Dica para a apresentação: adicione uma saída segura para redistribuir o fluxo.</em>
         </div>
       </div>
     </div>
@@ -177,13 +172,6 @@
 
       <!-- CENTER: MAPA REALISTA DA LIBERDADE -->
       <div class="panel map-panel">
-        <div class="map-toolbar" id="map-toolbar">
-          <div class="chip active" data-tab="tab-mapa">Mapa</div>
-          <div class="chip" data-tab="tab-custo">Custo do A*</div>
-          <div class="chip" data-tab="tab-nos">Nós explorados</div>
-          <div class="chip" data-tab="tab-comparar">Comparar c/ Dijkstra</div>
-        </div>
-
         <div class="map-canvas" id="map-canvas">
           <!-- MAPA REAL DO BAIRRO DA LIBERDADE (OpenStreetMap via Leaflet) -->
           <div id="leaflet-map"></div>
@@ -207,9 +195,7 @@
         <div class="stat-card"><span class="lbl">Evacuados</span><span class="num safe"><span id="stat-evacuados">0</span><span style="color:var(--text-muted); font-size:13px;">/<span id="stat-total">50</span></span></span></div>
         <div class="stat-card"><span class="lbl">Tempo decorrido</span><span class="num" id="stat-tempo">00:00</span></div>
         <div class="stat-card"><span class="lbl">Nós explorados</span><span class="num amber" id="stat-nos">—</span></div>
-        <div class="stat-card"><span class="lbl">Custo médio</span><span class="num" id="stat-custo">—</span></div>
-        <div class="stat-card"><span class="lbl">Resposta A*</span><span class="num safe" id="stat-fire-astar">—</span></div>
-        <div class="stat-card"><span class="lbl">Resposta Dijkstra</span><span class="num" id="stat-fire-dijkstra">—</span></div>
+        <div class="stat-card"><span class="lbl">Agentes presos</span><span class="num danger" id="stat-presos">0</span></div>
 
         <div class="panel-title spaced">Evacuados</div>
         <div class="chart-wrap">
@@ -293,10 +279,6 @@
         <div class="step"><span class="step-n">05</span> Repete até alcançar uma saída segura ou esvaziar a fila</div>
         <div class="step"><span class="step-n">06</span> Se uma rua for bloqueada (fogo), o agente refaz a busca instantaneamente</div>
 
-        <div class="panel-title spaced">A* vs. Dijkstra</div>
-        <div class="field"><span>Usa heurística</span><span class="val">A*: sim · Dijkstra: não</span></div>
-        <div class="field"><span>Nós explorados</span><span class="val">A*: até 70% menos</span></div>
-        <div class="field"><span>Garantia de ótimo</span><span class="val">ambos garantem rota perfeita</span></div>
       </div>
     </div>
   </section>
@@ -329,6 +311,6 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="main.js?v=20260916-dynamic-exit-routing-v14"></script>
+<script src="main.js?v=20260916-sync-simulation-controls-v20"></script>
 </body>
 </html>
