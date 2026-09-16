@@ -934,6 +934,8 @@
 
   function spreadFire() {
     if (activeFires.length === 0) return;
+    // 0,0× é uma opção explícita para manter o incêndio estacionário.
+    if (fireSpreadInput && parseFloat(fireSpreadInput.value) <= 0) return;
     var candidates = [];
     activeFires.forEach(function (fire) {
       nodes.forEach(function (n) {
@@ -1197,7 +1199,8 @@
   async function tick() {
     if (state !== STATE.RUNNING) return;
     elapsedSeconds += 1;
-    if (elapsedSeconds % Math.max(2, Math.round(5 / Math.max(0.5, (fireSpreadInput ? parseFloat(fireSpreadInput.value) : 1)))) === 0) {
+    var fireSpreadRate = fireSpreadInput ? parseFloat(fireSpreadInput.value) : 1;
+    if (fireSpreadRate > 0 && elapsedSeconds % Math.max(2, Math.round(5 / fireSpreadRate)) === 0) {
       spreadFire();
     }
     // A animação avança continuamente no requestAnimationFrame. Recalcular
