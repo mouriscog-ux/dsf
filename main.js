@@ -1470,7 +1470,14 @@
         }
       });
       if (nearest) {
-        edges.push({ from: newExitId, to: nearest.id, weight: Math.round(minD), name: 'Acesso Saída' });
+        // A malha OSM usa arestas direcionadas. A saída precisa receber uma
+        // ligação vinda da rua (para ser encontrada pelo A*) e manter o
+        // retorno para que a conexão continue utilizável em ambos os sentidos.
+        var exitAccessWeight = Math.max(1, Math.round(minD));
+        edges.push(
+          { from: nearest.id, to: newExitId, weight: exitAccessWeight, name: 'Acesso Saída', directed: true },
+          { from: newExitId, to: nearest.id, weight: exitAccessWeight, name: 'Acesso Saída', directed: true }
+        );
       }
       addLog('<span class="hl">Nova saída segura cadastrada</span>');
       // A saída é visível no instante do clique, mesmo enquanto a rota é recalculada.
