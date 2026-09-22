@@ -6,6 +6,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Anta&family=Bowlby+One+SC&family=Luckiest+Guy&family=Space+Grotesk:wght@300..700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <script>
+    try { document.documentElement.dataset.theme = localStorage.getItem('urbanisa-theme') || 'dark'; } catch (error) { document.documentElement.dataset.theme = 'dark'; }
+  </script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <link href="style.css" rel="stylesheet">
 </head>
@@ -130,6 +133,10 @@
         <button class="nav-btn" data-view="view-algoritmo">Sobre o algoritmo</button>
         <button class="nav-btn" data-view="view-mapa">Mapa e dados</button>
         <button class="nav-btn tutorial-trigger" id="btn-open-tutorial">📖 Tutorial</button>
+        <button class="nav-btn theme-toggle" id="theme-toggle" type="button" aria-label="Alternar para modo claro" aria-pressed="true">
+          <span class="theme-toggle-icon" aria-hidden="true">☀️</span>
+          <span class="theme-toggle-text">Modo claro</span>
+        </button>
       </div>
       <div class="status" id="status-bar"><span class="dot" id="status-dot"></span> <span id="status-text">Simulação parada</span></div>
     </div>

@@ -7,7 +7,40 @@
 (function () {
   'use strict';
 
-  /* ---------- 1. MODAL URBANISA TECH & TUTORIAL DA FEIRA ---------- */
+  /* ---------- 1. TEMA CLARO / ESCURO ---------- */
+  var THEME_STORAGE_KEY = 'urbanisa-theme';
+  var themeToggle = document.getElementById('theme-toggle');
+
+  function getSavedTheme() {
+    try { return localStorage.getItem(THEME_STORAGE_KEY); } catch (err) { return null; }
+  }
+
+  function applyTheme(theme, shouldSave) {
+    var nextTheme = theme === 'light' ? 'light' : 'dark';
+    var isLight = nextTheme === 'light';
+    document.documentElement.setAttribute('data-theme', nextTheme);
+
+    if (themeToggle) {
+      themeToggle.setAttribute('aria-label', isLight ? 'Alternar para modo escuro' : 'Alternar para modo claro');
+      themeToggle.setAttribute('aria-pressed', String(isLight));
+      themeToggle.innerHTML = '<span class="theme-toggle-icon" aria-hidden="true">' + (isLight ? '🌙' : '☀️') + '</span>' +
+        '<span class="theme-toggle-text">Modo ' + (isLight ? 'escuro' : 'claro') + '</span>';
+    }
+
+    if (shouldSave) {
+      try { localStorage.setItem(THEME_STORAGE_KEY, nextTheme); } catch (err) { /* armazenamento indisponível */ }
+    }
+  }
+
+  applyTheme(getSavedTheme() || 'dark', false);
+  window.setTimeout(function () { document.documentElement.classList.add('theme-ready'); }, 0);
+  if (themeToggle) {
+    themeToggle.addEventListener('click', function () {
+      applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark', true);
+    });
+  }
+
+  /* ---------- 2. MODAL URBANISA TECH & TUTORIAL DA FEIRA ---------- */
   var urbanisaModal   = document.getElementById('urbanisa-modal');
   var tutorialModal   = document.getElementById('tutorial-modal');
   var btnStartHero    = document.getElementById('btn-start-hero');
@@ -70,8 +103,8 @@
     }
   });
 
-  /* ---------- 2. NAVEGAÇÃO ENTRE ABAS PRINCIPAIS ---------- */
-  var navButtons = document.querySelectorAll('.nav-btn:not(.tutorial-trigger)');
+  /* ---------- 3. NAVEGAÇÃO ENTRE ABAS PRINCIPAIS ---------- */
+  var navButtons = document.querySelectorAll('.nav-btn:not(.tutorial-trigger):not(.theme-toggle)');
   var views = document.querySelectorAll('.view');
 
   navButtons.forEach(function (btn) {
