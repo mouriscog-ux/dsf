@@ -135,6 +135,8 @@
   var statNos       = document.getElementById('stat-nos');
   var statPresos    = document.getElementById('stat-presos');
   var fieldAgentes  = document.getElementById('field-agentes');
+  var mapaTotalNos = document.getElementById('mapa-total-nos');
+  var mapaTotalArestas = document.getElementById('mapa-total-arestas');
 
   var logList          = document.getElementById('log-list');
   var mapCanvas        = document.getElementById('map-canvas');
@@ -260,6 +262,14 @@
       maxZoom: 19,
       animate: false
     });
+  }
+
+  // A malha é carregada dinamicamente do OpenStreetMap e pode receber nós
+  // criados pelo usuário. Portanto, estes totais precisam refletir o grafo
+  // que está em uso, e não valores fixos de uma malha anterior.
+  function updateMapDataTotals() {
+    mapaTotalNos.textContent = nodes.length + (nodes.length === 1 ? ' nó' : ' nós');
+    mapaTotalArestas.textContent = edges.length + (edges.length === 1 ? ' conexão' : ' conexões');
   }
 
   // Camadas redesenhadas a cada frame da simulação
@@ -898,6 +908,7 @@
 
   /* ---------- 7. DESENHO DO MAPA REAL (LEAFLET) E OVERLAYS ---------- */
   function renderGraph() {
+    updateMapDataTotals();
     streetsLayer.clearLayers();
     nodesLayer.clearLayers();
     exitsLayer.clearLayers();
