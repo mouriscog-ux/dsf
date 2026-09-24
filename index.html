@@ -6,6 +6,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Anta&family=Bowlby+One+SC&family=Luckiest+Guy&family=Space+Grotesk:wght@300..700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <script>
+    try { document.documentElement.dataset.theme = localStorage.getItem('urbanisa-theme') || 'dark'; } catch (error) { document.documentElement.dataset.theme = 'dark'; }
+  </script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <link href="style.css" rel="stylesheet">
 </head>
@@ -21,7 +24,6 @@
     <div class="urbanisa-pills">
       <span class="pill"> Bairro da Liberdade</span>
       <span class="pill"> Algoritmo A*</span>
-      <span class="pill"> Comparativo Dijkstra</span>
       <span class="pill"> Obstáculos em Tempo Real</span>
     </div>
 
@@ -56,7 +58,7 @@
         <p>
           O simulador representa a malha viária real do <strong>Bairro da Liberdade (São Paulo)</strong>. Cada cruzamento
           é um <em>nó</em> e cada rua é uma <em>aresta ponderada pela distância</em>. As saídas seguras representam
-          pontos como a <strong>Estação Metrô Liberdade</strong>  e a <strong>Praça da Liberdade</strong>.
+          pontos seguros definidos dinamicamente a partir da malha carregada pela API.
         </p>
         <div class="slide-visual">
           <span class="swatch safe"></span> Saída Segura &nbsp;&nbsp;
@@ -82,7 +84,7 @@
       <!-- Slide 3 -->
       <div class="tutorial-slide" data-slide="3">
         <div class="slide-step">Passo 3 de 4</div>
-        <h3>Interatividade para a Feira de Ciências</h3>
+        <h3>Interatividade para a FECART</h3>
         <p>Demonstre para os jurados como o algoritmo reage em tempo real:</p>
         <ul class="slide-list">
           <li>🔥 <strong>Adicionar Bloqueio</strong>: Clique no mapa para simular incêndios ou escombros. Os agentes recalculam a rota instantaneamente!</li>
@@ -94,14 +96,10 @@
       <!-- Slide 4 -->
       <div class="tutorial-slide" data-slide="4">
         <div class="slide-step">Passo 4 de 4</div>
-        <h3>Aba Comparar c/ Dijkstra</h3>
-        <p>
-          Clique na aba <strong>"Comparar c/ Dijkstra"</strong> no topo do mapa para mostrar aos jurados o grande trunfo do projeto:
-          o A* reduz em até <strong>70% os nós explorados</strong> comparado ao algoritmo de Dijkstra tradicional, mantendo
-          a garantia de rota perfeita!
-        </p>
+        <h3>Monitoramento da evacuação</h3>
+        <p>Acompanhe no painel a quantidade de pessoas evacuadas e o tempo transcorrido da simulação.</p>
         <div class="slide-highlight">
-          🎯 <em>Dica para a apresentação: Mostre a aba de comparação após causar um incêndio no mapa!</em>
+          🎯 <em>Dica para a apresentação: adicione uma saída segura para redistribuir o fluxo.</em>
         </div>
       </div>
     </div>
@@ -124,7 +122,7 @@
   <header>
     <div class="topbar">
       <div class="brand">
-        <div class="brand-mark"></div>
+        <img class="brand-mark" src="assets/urbanisa-tech-logo.png" alt="Logo Urbanisa Tech">
         <div class="brand-text">
           <div class="name">URBANISA <span class="cyan">TECH</span></div>
           <div class="sub">SmartEvac · Bairro da Liberdade · FECART</div>
@@ -135,6 +133,10 @@
         <button class="nav-btn" data-view="view-algoritmo">Sobre o algoritmo</button>
         <button class="nav-btn" data-view="view-mapa">Mapa e dados</button>
         <button class="nav-btn tutorial-trigger" id="btn-open-tutorial">📖 Tutorial</button>
+        <button class="nav-btn theme-toggle" id="theme-toggle" type="button" aria-label="Alternar para modo claro" aria-pressed="true">
+          <span class="theme-toggle-icon" aria-hidden="true">☀️</span>
+          <span class="theme-toggle-text">Modo claro</span>
+        </button>
       </div>
       <div class="status" id="status-bar"><span class="dot" id="status-dot"></span> <span id="status-text">Simulação parada</span></div>
     </div>
@@ -162,13 +164,13 @@
 <div class="panel-title spaced">Ferramentas de simulação</div>
 
         <div class="slider-row fire-control">
-          <div class="slider-label"><span>Intensidade do Fogo</span><span id="fire-intensity-label">2.0×</span></div>
+          <div class="slider-label"><span>tamanho do bloqueio</span><span id="fire-intensity-label">2.0×</span></div>
           <input class="range-control" id="fire-intensity" type="range" min="1" max="5" step="0.5" value="2">
         </div>
 
         <div class="slider-row fire-control">
           <div class="slider-label"><span>Taxa de Espalhamento</span><span id="fire-spread-label">1.0×</span></div>
-          <input class="range-control" id="fire-spread" type="range" min="0.5" max="3" step="0.5" value="1">
+          <input class="range-control" id="fire-spread" type="range" min="0" max="3" step="0.5" value="1">
         </div>
 
         <div class="panel-title spaced">Ferramentas da Feira</div>
@@ -179,13 +181,6 @@
 
       <!-- CENTER: MAPA REALISTA DA LIBERDADE -->
       <div class="panel map-panel">
-        <div class="map-toolbar" id="map-toolbar">
-          <div class="chip active" data-tab="tab-mapa">Mapa</div>
-          <div class="chip" data-tab="tab-custo">Custo do A*</div>
-          <div class="chip" data-tab="tab-nos">Nós explorados</div>
-          <div class="chip" data-tab="tab-comparar">Comparar c/ Dijkstra</div>
-        </div>
-
         <div class="map-canvas" id="map-canvas">
           <!-- MAPA REAL DO BAIRRO DA LIBERDADE (OpenStreetMap via Leaflet) -->
           <div id="leaflet-map"></div>
@@ -197,11 +192,9 @@
         </div>
 
         <div class="map-legend" id="map-legend">
-          <div class="legend-item"><span class="legend-swatch" style="background:var(--surface-raised);border:2px solid var(--text-muted);"></span> Cruzamento</div>
           <div class="legend-item"><span class="legend-swatch" style="background:var(--safe);"></span> Saída segura</div>
           <div class="legend-item"><span class="legend-swatch" style="background:var(--danger);"></span> Bloqueio / risco</div>
           <div class="legend-item"><span class="legend-swatch" style="background:var(--amber);border-radius:50% 50% 50% 4px;"></span> Agente</div>
-          <div class="legend-item"><span class="legend-swatch" style="background:transparent;border-top:2.5px dashed var(--safe);width:14px;height:0;border-radius:0;"></span> Rota (A*)</div>
         </div>
       </div>
 
@@ -211,11 +204,9 @@
         <div class="stat-card"><span class="lbl">Evacuados</span><span class="num safe"><span id="stat-evacuados">0</span><span style="color:var(--text-muted); font-size:13px;">/<span id="stat-total">50</span></span></span></div>
         <div class="stat-card"><span class="lbl">Tempo decorrido</span><span class="num" id="stat-tempo">00:00</span></div>
         <div class="stat-card"><span class="lbl">Nós explorados</span><span class="num amber" id="stat-nos">—</span></div>
-        <div class="stat-card"><span class="lbl">Custo médio</span><span class="num" id="stat-custo">—</span></div>
-        <div class="stat-card"><span class="lbl">Resposta A*</span><span class="num safe" id="stat-fire-astar">—</span></div>
-        <div class="stat-card"><span class="lbl">Resposta Dijkstra</span><span class="num" id="stat-fire-dijkstra">—</span></div>
+        <div class="stat-card"><span class="lbl">Agentes presos</span><span class="num danger" id="stat-presos">0</span></div>
 
-        <div class="panel-title spaced">Evacuados / tempo</div>
+        <div class="panel-title spaced">Evacuados</div>
         <div class="chart-wrap">
           <div class="chart-line">
             <div class="chart-y-axis">
@@ -245,9 +236,9 @@
         <div class="panel-title">Log de eventos</div>
         <div class="log" id="log-list">
           <div>&gt; URBANISA TECH iniciada — 50 agentes</div>
-          <div> &gt; <span class="warn">Bloqueio em R. Galvão Bueno (Viaduto Osaka)</span></div>
+          <div> &gt; <span class="warn">Bloqueio registrado na malha viária</span></div>
           <div>&gt; Agentes recalculando rota via A*</div>
-          <div>&gt; <span class="hl">Agente chegou à saída Metrô Liberdade</span></div>
+          <div>&gt; <span class="hl">Agente chegou a uma saída segura</span></div>
         </div>
       </div>
 
@@ -297,10 +288,6 @@
         <div class="step"><span class="step-n">05</span> Repete até alcançar uma saída segura ou esvaziar a fila</div>
         <div class="step"><span class="step-n">06</span> Se uma rua for bloqueada (fogo), o agente refaz a busca instantaneamente</div>
 
-        <div class="panel-title spaced">A* vs. Dijkstra</div>
-        <div class="field"><span>Usa heurística</span><span class="val">A*: sim · Dijkstra: não</span></div>
-        <div class="field"><span>Nós explorados</span><span class="val">A*: até 70% menos</span></div>
-        <div class="field"><span>Garantia de ótimo</span><span class="val">ambos garantem rota perfeita</span></div>
       </div>
     </div>
   </section>
@@ -315,20 +302,17 @@
           O grafo representa fielmente os principais cruzamentos e trechos viários da Liberdade.
           Bloqueios em tempo real (incêndio, escombros) forçam o recálculo imediato da rota pelos pedestres.
         </p>
-        <div class="field"><span>Nós (cruzamentos)</span><span class="val">12 principais</span></div>
-        <div class="field"><span>Arestas (trechos viários)</span><span class="val">15 conexões</span></div>
+        <div class="field"><span>Nós no grafo</span><span class="val" id="mapa-total-nos">Carregando…</span></div>
+        <div class="field"><span>Arestas (trechos viários)</span><span class="val" id="mapa-total-arestas">Carregando…</span></div>
         <div class="field"><span>Saídas de Emergência</span><span class="val">Metrô, Praça, Av. Liberdade</span></div>
-        <div class="field"><span>Marcos Turísticos</span><span class="val">Portal Lanternas, Viaduto Osaka</span></div>
       </div>
 
       <div class="panel">
         <div class="panel-title">Legenda do Mapa</div>
         <div class="map-legend mapa-legend-block">
-          <div class="legend-item"><span class="legend-swatch" style="background:var(--surface-raised);border:2px solid var(--text-muted);"></span> Cruzamento</div>
           <div class="legend-item"><span class="legend-swatch" style="background:var(--safe);"></span> Saída segura</div>
           <div class="legend-item"><span class="legend-swatch" style="background:var(--danger);"></span> Bloqueio / incêndio</div>
           <div class="legend-item"><span class="legend-swatch" style="background:var(--amber);border-radius:50% 50% 50% 4px;"></span> Agente</div>
-          <div class="legend-item"><span class="legend-swatch" style="background:transparent;border-top:2.5px dashed var(--safe);width:14px;height:0;border-radius:0;"></span> Rota (A*)</div>
         </div>
       </div>
     </div>
@@ -336,6 +320,6 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="main.js"></script>
+<script src="main.js?v=20260916-fire-spread-v25"></script>
 </body>
 </html></html></html>
